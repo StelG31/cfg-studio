@@ -476,6 +476,37 @@ a {
   .tree-canvas { height: 340px; }
 }
 
+/* ——— 6e. Help section ——— */
+.help-steps li::marker {
+  color: var(--cfg-primary);
+  font-weight: 600;
+}
+
+.help-table th {
+  color: var(--cfg-muted);
+  font-weight: 600;
+  width: 8.5rem;
+}
+
+.help-tools dt {
+  color: var(--cfg-primary);
+}
+
+kbd {
+  background-color: var(--cfg-navy);
+  border-radius: 0.3rem;
+  font-size: 0.78em;
+  padding: 0.15rem 0.4rem;
+}
+
+/* Inline code fragments across the app (help tables, sample cards). */
+code {
+  color: var(--cfg-terminal);
+  background-color: var(--cfg-terminal-soft);
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+}
+
 /* ================================= 7. Footer, utilities, responsive tweaks */
 .app-footer {
   border-top: 1px solid var(--cfg-border);

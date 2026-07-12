@@ -414,7 +414,168 @@
           How to write grammars in CFG Studio and what each tool does.
         </p>
       </header>
-      <div id="help-root"><!-- populated in a later step --></div>
+      <div id="help-root">
+        <div class="row g-4">
+
+          <div class="col-lg-6">
+            <!-- Quick start -->
+            <div class="card mb-4">
+              <div class="card-header">
+                <i class="bi bi-rocket-takeoff me-2" aria-hidden="true"></i>Quick start
+              </div>
+              <div class="card-body">
+                <ol class="mb-0 help-steps">
+                  <li class="mb-2">
+                    <strong>Define a grammar</strong> in the <a href="#editor">Editor</a> — or load a
+                    ready-made example from <a href="#grammars">My Grammars</a>. The validation panel
+                    reacts as you type.
+                  </li>
+                  <li class="mb-2">
+                    Open <a href="#cnf">CNF Conversion</a> to transform the grammar into
+                    <em>Chomsky Normal Form</em>, one explained step at a time.
+                  </li>
+                  <li class="mb-2">
+                    In the <a href="#cyk">CYK Simulator</a>, type a string and watch the algorithm
+                    fill its table cell by cell until the verdict.
+                  </li>
+                  <li>
+                    If the string is accepted, explore its derivation in the
+                    <a href="#tree">Parse Tree</a> — drag to pan, scroll to zoom, export as SVG.
+                  </li>
+                </ol>
+              </div>
+            </div>
+
+            <!-- Writing grammars -->
+            <div class="card mb-4">
+              <div class="card-header">
+                <i class="bi bi-pencil me-2" aria-hidden="true"></i>Writing grammars
+              </div>
+              <div class="card-body">
+                <table class="table table-sm align-middle help-table mb-3">
+                  <tbody>
+                    <tr>
+                      <th scope="row" class="text-nowrap">Variables (V)</th>
+                      <td>
+                        Start with an uppercase letter, may continue with letters, digits or
+                        <code>_</code> — e.g. <code>S</code>, <code>A</code>, <code>X1</code>,
+                        <code>T_a</code>. Separate with spaces or commas.
+                      </td>
+                    </tr>
+                    <tr>
+                      <th scope="row" class="text-nowrap">Terminals (Σ)</th>
+                      <td>
+                        Single non-uppercase characters — e.g. <code>a</code> <code>b</code>
+                        <code>0</code> <code>(</code> <code>)</code> <code>+</code> <code>*</code>.
+                        Separate with spaces. <code>|</code>, <code>ε</code> and <code>λ</code> are
+                        reserved.
+                      </td>
+                    </tr>
+                    <tr>
+                      <th scope="row" class="text-nowrap">Productions (P)</th>
+                      <td>
+                        One line per variable: choose the left-hand side, then type the
+                        alternatives — e.g. <code>( S ) | S S | ε</code>. Spaces between symbols are
+                        optional (declared symbols are recognised by longest match).
+                      </td>
+                    </tr>
+                    <tr>
+                      <th scope="row" class="text-nowrap">Empty string</th>
+                      <td>
+                        Use the <strong>ε</strong> button, or type <code>ε</code>,
+                        <code>epsilon</code>, <code>eps</code> or <code>lambda</code> as an
+                        alternative on its own.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p class="small text-secondary mb-0">
+                  Your work is <strong>auto-saved as a draft</strong> in the browser on every change.
+                  Press <kbd>Ctrl</kbd>+<kbd>S</kbd> (or the Save button) to store a valid grammar on
+                  the server, and use Export / Import for JSON files.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-6">
+            <!-- The tools -->
+            <div class="card mb-4">
+              <div class="card-header">
+                <i class="bi bi-tools me-2" aria-hidden="true"></i>The tools, in one paragraph each
+              </div>
+              <div class="card-body">
+                <dl class="mb-0 help-tools">
+                  <dt><i class="bi bi-shield-check me-1" aria-hidden="true"></i>Validation</dt>
+                  <dd class="mb-3">
+                    Checks that the grammar is a well-formed CFG (declared symbols, valid start
+                    symbol, no duplicates…) and warns about <em>useless structure</em>:
+                    variables that are unreachable from the start symbol or can never derive a
+                    terminal string.
+                  </dd>
+                  <dt><i class="bi bi-arrow-left-right me-1" aria-hidden="true"></i>CNF conversion</dt>
+                  <dd class="mb-3">
+                    Rewrites the grammar so every rule is <code>A → B C</code> or
+                    <code>A → a</code> (plus <code>S → ε</code> if ε belongs to the language),
+                    through six classic stages — START, TERM, BIN, DEL, UNIT, CLEANUP — each shown
+                    with the rules it adds or removes and why.
+                  </dd>
+                  <dt><i class="bi bi-grid-3x3 me-1" aria-hidden="true"></i>CYK simulator</dt>
+                  <dd class="mb-3">
+                    The Cocke–Younger–Kasami dynamic-programming algorithm decides membership in
+                    O(n³·|P|): cell (i, l) collects the variables deriving the substring at
+                    position i of length l, built bottom-up from shorter substrings. The animation
+                    replays exactly the steps the algorithm performed.
+                  </dd>
+                  <dt><i class="bi bi-diagram-2 me-1" aria-hidden="true"></i>Parse tree</dt>
+                  <dd class="mb-0">
+                    Reconstructed from the CYK table's backpointers; shows the derivation tree of
+                    the CNF grammar together with the leftmost derivation it encodes.
+                  </dd>
+                </dl>
+              </div>
+            </div>
+
+            <!-- Limits -->
+            <div class="card mb-4">
+              <div class="card-header">
+                <i class="bi bi-speedometer2 me-2" aria-hidden="true"></i>Limits
+              </div>
+              <div class="card-body">
+                <ul class="small mb-0">
+                  <li>CYK input strings: at most <strong>30 characters</strong> (the table and the
+                      O(n³) trace must stay readable).</li>
+                  <li>Grammars: at most <strong>200 productions</strong>, 100 variables,
+                      100 terminals — far beyond any classroom example.</li>
+                  <li>Only <strong>valid</strong> grammars can be saved on the server; drafts of any
+                      state live in your browser.</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- About -->
+            <div class="card">
+              <div class="card-header">
+                <i class="bi bi-mortarboard me-2" aria-hidden="true"></i>About CFG Studio
+              </div>
+              <div class="card-body">
+                <p class="small mb-2">
+                  CFG Studio is an educational workbench developed as a Bachelor's Thesis:
+                  <em>“Development of a Web Application for the Design and Computation of
+                  Context-Free Grammars (CFGs)”</em>. It focuses exclusively on context-free
+                  grammars — in the spirit of classroom tools like JFLAP, but built for the web.
+                </p>
+                <p class="small text-secondary mb-0">
+                  Node.js · Express · vanilla JavaScript (ES modules) · Bootstrap 5 · Jest.
+                  The algorithm modules run identically in the browser, on the server and in the
+                  test suite.
+                </p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
     </section>
 
   </main>

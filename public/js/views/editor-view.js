@@ -108,6 +108,14 @@ export function init() {
   document.getElementById('btnSaveGrammar').addEventListener('click', saveGrammar);
   document.getElementById('btnExportGrammar').addEventListener('click', exportGrammar);
 
+  // Ctrl+S / Cmd+S saves the working grammar from anywhere in the app.
+  document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      saveGrammar();
+    }
+  });
+
   // Another view (My Grammars, samples, import) replaced the working grammar.
   events.addEventListener('grammar-loaded', fillFormFromGrammar);
 

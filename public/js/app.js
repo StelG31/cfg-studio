@@ -123,6 +123,7 @@ function showSection(name) {
   if (collapseEl?.classList.contains('show')) {
     window.bootstrap.Collapse.getOrCreateInstance(collapseEl).hide();
   }
+  window.scrollTo({ top: 0 }); // a section switch is a page change
   emit('section-shown', { name });
 }
 
@@ -143,6 +144,10 @@ async function init() {
   window.addEventListener('hashchange', () => showSection(sectionFromHash()));
   showSection(sectionFromHash());
   updateGrammarIndicator();
+
+  // Activate every statically declared tooltip once the DOM is ready.
+  const { initTooltips } = await import('./ui.js');
+  initTooltips(document);
 
   // View modules register themselves here as they are implemented.
   // Each exports an init() that renders into its #<name>-root container.

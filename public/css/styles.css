@@ -277,6 +277,37 @@ a {
 /* Editor, CNF, CYK and tree specific rules are appended in their own
    implementation steps to keep each module self-contained. */
 
+/* ——— 6a. Grammar editor ——— */
+.production-row {
+  padding: 0.4rem 0;
+  border-bottom: 1px dashed var(--cfg-border);
+}
+
+.production-row:last-child {
+  border-bottom: none;
+}
+
+.production-row .lhs-select {
+  width: auto;
+  min-width: 5.5rem;
+  flex-shrink: 0;
+}
+
+.production-row .arrow {
+  color: var(--cfg-muted);
+  font-family: var(--cfg-font-mono);
+  flex-shrink: 0;
+}
+
+.production-row .eps-btn {
+  font-family: var(--cfg-font-mono);
+  flex-shrink: 0;
+}
+
+.production-row .remove-btn {
+  flex-shrink: 0;
+}
+
 /* ================================= 7. Footer, utilities, responsive tweaks */
 .app-footer {
   border-top: 1px solid var(--cfg-border);

@@ -85,7 +85,103 @@
           G&nbsp;=&nbsp;(V,&nbsp;Σ,&nbsp;P,&nbsp;S): variables, terminals, productions and the start symbol.
         </p>
       </header>
-      <div id="editor-root"><!-- populated by editor-view.js --></div>
+      <div id="editor-root">
+        <div class="row g-4">
+
+          <!-- Left column: the grammar definition forms -->
+          <div class="col-lg-7">
+
+            <!-- Symbols: V, Σ and S of the 4-tuple -->
+            <div class="card mb-4">
+              <div class="card-header d-flex align-items-center justify-content-between">
+                <span><i class="bi bi-collection me-2" aria-hidden="true"></i>Symbols</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewGrammar"
+                        data-bs-toggle="tooltip" title="Start over with a blank grammar">
+                  <i class="bi bi-file-earmark-plus" aria-hidden="true"></i> New grammar
+                </button>
+              </div>
+              <div class="card-body">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label for="grammarName" class="form-label">Grammar name</label>
+                    <input type="text" class="form-control" id="grammarName"
+                           placeholder="e.g. Balanced Parentheses" maxlength="100">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="grammarDescription" class="form-label">
+                      Description <span class="text-secondary fw-normal">(optional)</span>
+                    </label>
+                    <input type="text" class="form-control" id="grammarDescription"
+                           placeholder="What language does it generate?" maxlength="300">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="variablesInput" class="form-label">
+                      Variables (non-terminals)
+                      <i class="bi bi-info-circle text-secondary" data-bs-toggle="tooltip"
+                         title="Separate with spaces or commas. Variables start with an uppercase letter: S, A, X1 …"></i>
+                    </label>
+                    <input type="text" class="form-control grammar-input" id="variablesInput"
+                           placeholder="e.g.  S A B" autocomplete="off" spellcheck="false">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="terminalsInput" class="form-label">
+                      Terminals (alphabet Σ)
+                      <i class="bi bi-info-circle text-secondary" data-bs-toggle="tooltip"
+                         title="Single non-uppercase characters, separated by spaces: a b 0 1 ( ) + *"></i>
+                    </label>
+                    <input type="text" class="form-control grammar-input" id="terminalsInput"
+                           placeholder="e.g.  a b" autocomplete="off" spellcheck="false">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="startSymbolSelect" class="form-label">Start symbol</label>
+                    <select class="form-select grammar-input" id="startSymbolSelect">
+                      <option value="">— choose a variable —</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Productions: P of the 4-tuple -->
+            <div class="card">
+              <div class="card-header">
+                <i class="bi bi-list-ul me-2" aria-hidden="true"></i>Productions
+                <span class="text-secondary fw-normal small ms-1">
+                  — one row per variable line; separate alternatives with <code>|</code>
+                </span>
+              </div>
+              <div class="card-body">
+                <div id="productionRows"><!-- rows are rendered by editor-view.js --></div>
+                <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="btnAddProduction">
+                  <i class="bi bi-plus-lg" aria-hidden="true"></i> Add production
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right column: live overview + validation feedback -->
+          <div class="col-lg-5">
+            <div class="card mb-4">
+              <div class="card-header">
+                <i class="bi bi-eye me-2" aria-hidden="true"></i>Grammar overview
+              </div>
+              <div class="card-body" id="grammarOverview">
+                <p class="text-secondary mb-0">Declare symbols and productions to see the grammar here.</p>
+              </div>
+            </div>
+
+            <div class="card" id="validationCard">
+              <div class="card-header">
+                <i class="bi bi-shield-check me-2" aria-hidden="true"></i>Validation
+              </div>
+              <div class="card-body" id="validationPanel">
+                <p class="text-secondary mb-0">Validation results will appear here as you type.</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
     </section>
 
     <!-- ————— Section: CNF Conversion ————— -->

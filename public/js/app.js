@@ -140,6 +140,8 @@ async function init() {
 
   // View modules register themselves here as they are implemented.
   // Each exports an init() that renders into its #<name>-root container.
+  const editorView = await import('./views/editor-view.js');
+  editorView.init();
 }
 
 document.readyState === 'loading'

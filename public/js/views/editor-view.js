@@ -29,6 +29,7 @@ import {
   parseProductionLine,
   EPSILON,
 } from '/core/grammar.js';
+import { validateGrammar } from '/core/validator.js';
 import { state, events, markGrammarEdited, setGrammar } from '../app.js';
 import { escapeHtml, showToast, confirmDialog, initTooltips } from '../ui.js';
 import { saveDraft, loadDraft, clearDraft } from '../storage.js';
@@ -64,6 +65,7 @@ export function init() {
   els.addButton = document.getElementById('btnAddProduction');
   els.newButton = document.getElementById('btnNewGrammar');
   els.overview = document.getElementById('grammarOverview');
+  els.validation = document.getElementById('validationPanel');
 
   // Form fields → model (metadata fields don't affect symbols/productions).
   els.name.addEventListener('input', rebuildGrammar);
@@ -168,6 +170,7 @@ function rebuildGrammar() {
   markGrammarEdited();
   renderRowFeedback();
   renderOverview();
+  renderValidation();
   scheduleDraftSave();
 }
 
@@ -206,6 +209,7 @@ function fillFormFromGrammar() {
   els.start.value = grammar.startSymbol;
   renderRows();
   renderOverview();
+  renderValidation();
 }
 
 /** Restore the verbatim form snapshot saved as a draft. */
@@ -462,6 +466,70 @@ function renderOverview() {
     </div>`;
 
   initTooltips(els.overview);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Validation panel (live feedback from core/validator.js)                   */
+/* ------------------------------------------------------------------------ */
+
+/** One finding → one list row with a severity icon. */
+function findingHtml(finding) {
+  const isError = finding.severity === 'error';
+  const icon = isError ? 'bi-x-circle-fill text-danger' : 'bi-exclamation-triangle-fill text-warning';
+  return `
+    <li class="d-flex gap-2 align-items-start mb-2">
+      <i class="bi ${icon} mt-1" aria-hidden="true"></i>
+      <span>${escapeHtml(finding.message)}</span>
+    </li>`;
+}
+
+/**
+ * Re-run the shared validator against the working grammar and paint the
+ * result. Runs on every model change — the analyses are linear-time, so
+ * live validation costs nothing at classroom scale.
+ */
+function renderValidation() {
+  const grammar = state.grammar;
+  if (!grammar) return;
+
+  const isUntouched =
+    grammar.variables.length === 0 &&
+    grammar.terminals.length === 0 &&
+    grammar.productions.length === 0;
+  if (isUntouched) {
+    els.validation.innerHTML =
+      '<p class="text-secondary mb-0">Validation results will appear here as you type.</p>';
+    return;
+  }
+
+  const { valid, errors, warnings } = validateGrammar(grammar);
+
+  const parts = [];
+  if (valid) {
+    parts.push(`
+      <div class="verdict-banner verdict-accepted mb-0">
+        <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
+        The grammar is well-formed.
+      </div>`);
+  } else {
+    parts.push(`
+      <div class="verdict-banner verdict-rejected mb-3">
+        <i class="bi bi-x-circle-fill" aria-hidden="true"></i>
+        ${errors.length} problem${errors.length === 1 ? '' : 's'} to fix
+      </div>
+      <ul class="list-unstyled small mb-0">${errors.map(findingHtml).join('')}</ul>`);
+  }
+
+  if (warnings.length > 0) {
+    parts.push(`
+      <hr>
+      <p class="small text-secondary mb-2">
+        Warnings — the grammar is usable, but contains useless structure:
+      </p>
+      <ul class="list-unstyled small mb-0">${warnings.map(findingHtml).join('')}</ul>`);
+  }
+
+  els.validation.innerHTML = parts.join('');
 }
 
 /* ------------------------------------------------------------------------ */

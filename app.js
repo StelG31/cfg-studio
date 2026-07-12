@@ -26,6 +26,8 @@ import compression from 'compression';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import computeRoutes from './routes/computeRoutes.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
@@ -64,6 +66,12 @@ app.use(
   '/vendor/bootstrap-icons',
   express.static(path.join(__dirname, 'node_modules/bootstrap-icons/font'), staticOptions)
 );
+
+// ---------------------------------------------------------------------------
+// API routes
+// ---------------------------------------------------------------------------
+
+app.use('/api', computeRoutes);
 
 // ---------------------------------------------------------------------------
 // Pages & health check

@@ -74,4 +74,53 @@ For a right-hand side of length *n* and *k* declared symbols: **O(n · k)** wors
 - Provides: symbol predicates (`isValidVariableName`, `isValidTerminalSymbol`), `tokenizeRhs` (with exact error positions for editor feedback), `parseProductionLine` (splits `LHS -> alt | alt`, accepts both `->` and `→`), formatting helpers (`productionToString`, `grammarToText` for grouped display), duplicate detection keys (`productionKey`), deep cloning, and JSON (de)serialization with structural checks for the import feature.
 - Reserved characters that can never be terminals: `|` (alternative separator), `ε`/`λ` (empty-string aliases) and whitespace. The arrow `->` is only special as the *first* occurrence in a production line, so `-` and `>` remain usable as terminals.
 
+---
+
+## 2. Grammar validation
+
+### Theory
+
+Validation answers two different questions, and the distinction matters for the user experience:
+
+- **Errors** — the object is not a well-formed CFG at all: a missing or undeclared start symbol, symbols that violate the naming conventions, a symbol declared as both variable and terminal, productions whose left side is not a declared variable, right-hand sides that use undeclared symbols, duplicate declarations or duplicate productions, or no productions at all. Algorithms must refuse to run on such input.
+- **Warnings** — the grammar is well-formed but contains *useless structure*, detected with two classic fixpoint analyses (Hopcroft & Ullman's "useless symbol" elimination, here used only diagnostically):
+  - a variable is **generating** if it can derive some string of terminals;
+  - a variable is **reachable** if it appears in some sentential form derived from S.
+
+  Non-generating or unreachable variables (and terminals that appear in no production) do not make the grammar invalid — they simply cannot influence the language, which is exactly what a student should be told. A non-generating *start symbol* earns the strongest warning: L(G) = ∅.
+
+### Pseudo-code
+
+**Generating variables** (bottom-up fixpoint):
+
+```
+GEN ← ∅
+repeat until no change:
+    for each production A → X1…Xk:
+        if every Xi is a terminal or in GEN:   # ε-production: k = 0, trivially true
+            GEN ← GEN ∪ {A}
+```
+
+**Reachable variables** (top-down breadth-first search):
+
+```
+REACH ← {S}; queue ← [S]
+while queue not empty:
+    A ← pop(queue)
+    for each production A → X1…Xk:
+        for each Xi that is a variable and Xi ∉ REACH:
+            REACH ← REACH ∪ {Xi}; push(queue, Xi)
+```
+
+### Complexity
+
+Both analyses are **O(|P| · L)** per fixpoint round (L = longest right-hand side) with at most |V| rounds — O(|V| · |P| · L) worst case; the direct checks (naming, duplicates, undefined symbols) are a single O(|P| · L) pass over the grammar with set lookups. Instantaneous at classroom scale, fast enough to run on every keystroke.
+
+### Implementation details (`core/validator.js`)
+
+- `validateGrammar(grammar)` returns `{ valid, errors[], warnings[] }`; every finding is `{ code, severity, message, context }` with a **stable machine-readable code** (`START_NOT_DECLARED`, `UNDEFINED_SYMBOL`, `DUPLICATE_PRODUCTION`, …) so tests assert codes, never message text.
+- Warnings are computed **only when there are no errors** — running reachability over a structurally broken grammar would produce misleading noise.
+- `computeGenerating` and `computeReachable` are exported separately: the CNF converter reuses exactly these analyses for its useless-symbol cleanup stage (single source of truth).
+- Messages are written for students: they name the offending symbol/production and say what to do about it.
+
 

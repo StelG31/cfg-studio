@@ -1,0 +1,24 @@
+# render.yaml — Render Blueprint for CFG Studio
+# ---------------------------------------------------------------------------
+# One Node web service serves both the REST API and the static frontend
+# (the same Express process). Deploy via Render: New → Blueprint → select
+# this repository; Render reads this file and pre-fills everything.
+#
+# Free-tier note: the filesystem is ephemeral, so user-saved grammars reset
+# on redeploys. For durable saves attach a Render Disk and point DATA_DIR
+# at its mount path (no code changes needed).
+
+services:
+  - type: web
+    name: cfg-studio
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.12.0

@@ -182,4 +182,50 @@ START O(|P|); TERM O(|P|·L); BIN O(|P|·L); DEL O(|P|·2²) = O(|P|) after BIN 
 - A grammar that is already in CNF is detected upfront (`isCnf`) and reported as a single explanatory no-op step.
 - If the start symbol generates nothing, the result has no productions: the `emptyLanguage` flag lets the UI say "L(G) = ∅" explicitly instead of showing a bare grammar.
 
+---
+
+## 4. The CYK membership algorithm
+
+### Theory
+
+The **Cocke–Younger–Kasami** algorithm decides, for a grammar G in Chomsky Normal Form and a string w = w₁…wₙ, whether w ∈ L(G). It is a classic **dynamic-programming** algorithm built on one observation: in CNF, any derivation of a string of length ≥ 2 starts with a binary rule A → BC, where B derives a *prefix* and C the matching *suffix*. So define
+
+> **V(i, l)** = the set of variables that derive the substring of w starting at position i with length l.
+
+- **Base row (l = 1):** V(i, 1) = { A | A → wᵢ ∈ P } — read directly off the terminal rules.
+- **Induction (l ≥ 2):** A ∈ V(i, l) iff there is a split length k (1 ≤ k < l) and a rule A → BC with B ∈ V(i, k) and C ∈ V(i+k, l−k). Every possible split is tried; the table is filled by increasing length, so both sub-cells are always ready.
+- **Answer:** w ∈ L(G) iff S ∈ V(1, n). The empty string is a special case handled before the table: ε ∈ L(G) iff the rule S → ε exists (the only ε-rule CNF allows).
+
+This is exactly why the CNF conversion (§3) exists in the pipeline: binary rules make "split into two halves" the *only* case the induction must consider.
+
+### Pseudo-code
+
+```
+if n = 0: return (S → ε) ∈ P
+
+for i ← 1 to n:                               # base row
+    V(i,1) ← { A | A → w_i ∈ P }
+
+for l ← 2 to n:                               # substring length
+    for i ← 1 to n − l + 1:                   # start position
+        for k ← 1 to l − 1:                   # split length
+            for each rule A → B C ∈ P:
+                if B ∈ V(i,k) and C ∈ V(i+k, l−k):
+                    V(i,l) ← V(i,l) ∪ {A}      # + record backpointer (k, rule)
+
+return S ∈ V(1,n)
+```
+
+### Complexity
+
+Three nested loops over (l, i, k) give **O(n³)** cell-combinations, each scanning the binary rules: **O(n³ · |P|)** time and **O(n² · |V|)** space. CFG Studio caps the input at 30 characters — far beyond classroom examples, but keeps the animated table readable and the trace bounded (~n³/6 ≈ 4 500 recorded steps at the cap).
+
+### Implementation details (`core/cyk.js`)
+
+- `runCyk(grammar, input)` first checks its preconditions and throws typed errors (`GRAMMAR_NOT_CNF`, `INVALID_INPUT_CHAR` with the exact position, `INPUT_TOO_LONG`) so the UI and the API can show precise messages.
+- Binary rules are pre-indexed in a map keyed by (B, C), so each split-combination is a hash lookup, not a rule scan.
+- Every table entry keeps **all** its derivations (`{k, production}` backpointers, or the terminal production on the base row) — this is what §5 uses to reconstruct a parse tree, and keeping *all* of them (not just the first) preserves ambiguity information.
+- Besides the table, `runCyk` emits a **step trace** for the animation: `begin` → one `init-cell` per position → one `combine` step per (cell, split) with the variables found and a sentence explaining why → `cell-done` summaries → `verdict`. The UI replays this trace; the algorithm itself runs to completion instantly.
+- Cells are plain JSON objects (arrays, no Maps/Sets) so the same result object can travel over the REST API unchanged.
+
 

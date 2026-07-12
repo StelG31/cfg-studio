@@ -18,6 +18,7 @@
 import { deserializeGrammar } from '../core/grammar.js';
 import { validateGrammar } from '../core/validator.js';
 import { convertToCnf } from '../core/cnf.js';
+import { runCyk } from '../core/cyk.js';
 import { HttpError } from '../utils/httpError.js';
 
 /** Hard limits — far above anything a classroom grammar needs. */
@@ -83,4 +84,28 @@ function parseValidGrammar(payload) {
 /** POST /api/cnf — full CNF conversion with the step-by-step trace. */
 export function cnf(payload) {
   return convertToCnf(parseValidGrammar(payload));
+}
+
+/**
+ * POST /api/cyk — run CYK over {grammar, input}.
+ * The grammar must be valid AND in CNF; the input a string over Σ.
+ * CykError conditions (wrong form, bad character, too long) become 400s
+ * with their stable codes preserved.
+ */
+export function cyk(body) {
+  if (body === undefined || body === null || typeof body !== 'object') {
+    throw HttpError.badRequest('MISSING_BODY', 'Expected a JSON body { grammar, input }.');
+  }
+  const grammar = parseValidGrammar(body.grammar);
+  if (typeof body.input !== 'string') {
+    throw HttpError.badRequest('MISSING_INPUT', 'The request must include "input" as a string.');
+  }
+  try {
+    return runCyk(grammar, body.input);
+  } catch (err) {
+    if (err.name === 'CykError') {
+      throw HttpError.badRequest(err.code, err.message);
+    }
+    throw err;
+  }
 }

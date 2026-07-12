@@ -227,7 +227,89 @@
           Cocke–Younger–Kasami algorithm, cell by cell.
         </p>
       </header>
-      <div id="cyk-root"><!-- populated by cyk-view.js --></div>
+      <div id="cyk-root">
+        <div class="row g-4">
+
+          <!-- Left: the CNF grammar driving the simulation -->
+          <div class="col-lg-4">
+            <div class="card">
+              <div class="card-header">
+                <i class="bi bi-file-earmark-text me-2" aria-hidden="true"></i>Grammar in CNF
+              </div>
+              <div class="card-body" id="cykGrammar">
+                <p class="text-secondary mb-0">Loading…</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: input + animated table -->
+          <div class="col-lg-8">
+            <div class="card mb-4">
+              <div class="card-header">
+                <i class="bi bi-input-cursor-text me-2" aria-hidden="true"></i>Input string
+              </div>
+              <div class="card-body">
+                <div class="input-group">
+                  <span class="input-group-text grammar-text">w&nbsp;=</span>
+                  <input type="text" class="form-control grammar-input" id="cykInput"
+                         maxlength="30" placeholder="e.g. aabb — leave empty to test ε"
+                         autocomplete="off" spellcheck="false" aria-label="Input string for CYK">
+                  <button type="button" class="btn btn-primary" id="btnRunCyk">
+                    <i class="bi bi-play-fill" aria-hidden="true"></i> Run CYK
+                  </button>
+                </div>
+                <div class="form-text">
+                  Every character must be a terminal of the grammar · maximum 30 characters.
+                </div>
+              </div>
+            </div>
+
+            <div class="card d-none" id="cykSimCard">
+              <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <span><i class="bi bi-grid-3x3 me-2" aria-hidden="true"></i>Simulation</span>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                  <div class="btn-group btn-group-sm" role="group" aria-label="Playback controls">
+                    <button type="button" class="btn btn-outline-secondary" id="btnCykReset"
+                            data-bs-toggle="tooltip" title="Restart from the beginning">
+                      <i class="bi bi-skip-start-fill" aria-hidden="true"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="btnCykStepBack"
+                            data-bs-toggle="tooltip" title="One step back">
+                      <i class="bi bi-chevron-left" aria-hidden="true"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" id="btnCykPlay"
+                            data-bs-toggle="tooltip" title="Play / pause">
+                      <i class="bi bi-play-fill" aria-hidden="true"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="btnCykStepFwd"
+                            data-bs-toggle="tooltip" title="One step forward">
+                      <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="btnCykSkip"
+                            data-bs-toggle="tooltip" title="Skip to the result">
+                      <i class="bi bi-skip-end-fill" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                  <select class="form-select form-select-sm w-auto" id="cykSpeed"
+                          aria-label="Animation speed">
+                    <option value="0.5">0.5×</option>
+                    <option value="1" selected>1×</option>
+                    <option value="2">2×</option>
+                    <option value="4">4×</option>
+                  </select>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="table-responsive mb-3" id="cykTableWrap"><!-- table renders here --></div>
+                <div class="cyk-explanation mb-2" id="cykExplanation" aria-live="polite"></div>
+                <div class="small text-secondary mb-3" id="cykProgress"></div>
+                <div id="cykVerdict"></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
     </section>
 
     <!-- ————— Section: Parse Tree ————— -->

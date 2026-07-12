@@ -151,6 +151,46 @@ describe('sample grammars', () => {
   });
 });
 
+describe('CYK endpoint', () => {
+  test('POST /api/cyk runs the algorithm over a CNF grammar', async () => {
+    const cnfGrammar = {
+      variables: ['S', 'A', 'B'],
+      terminals: ['a', 'b'],
+      startSymbol: 'S',
+      productions: [
+        { left: 'S', right: ['A', 'B'] },
+        { left: 'A', right: ['a'] },
+        { left: 'B', right: ['b'] },
+      ],
+    };
+    const yes = await request(app).post('/api/cyk').send({ grammar: cnfGrammar, input: 'ab' });
+    expect(yes.status).toBe(200);
+    expect(yes.body.accepted).toBe(true);
+    expect(yes.body.steps.at(-1).type).toBe('verdict');
+
+    const no = await request(app).post('/api/cyk').send({ grammar: cnfGrammar, input: 'ba' });
+    expect(no.body.accepted).toBe(false);
+  });
+
+  test('POST /api/cyk rejects a non-CNF grammar with the stable code', async () => {
+    const response = await request(app).post('/api/cyk').send({ grammar: anbn(), input: 'ab' });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('GRAMMAR_NOT_CNF');
+  });
+
+  test('POST /api/cyk rejects characters outside the alphabet', async () => {
+    const cnfGrammar = {
+      variables: ['S'],
+      terminals: ['a'],
+      startSymbol: 'S',
+      productions: [{ left: 'S', right: ['a'] }],
+    };
+    const response = await request(app).post('/api/cyk').send({ grammar: cnfGrammar, input: 'ax' });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_INPUT_CHAR');
+  });
+});
+
 describe('error handling', () => {
   test('unknown API routes yield a JSON 404', async () => {
     const response = await request(app).get('/api/definitely-not-a-route');

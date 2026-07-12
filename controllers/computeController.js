@@ -28,3 +28,8 @@ export const postValidate = asyncHandler(async (req, res) => {
 export const postCnf = asyncHandler(async (req, res) => {
   res.json(computeService.cnf(grammarFromBody(req.body)));
 });
+
+/** POST /api/cyk — expects { grammar, input }. */
+export const postCyk = asyncHandler(async (req, res) => {
+  res.json(computeService.cyk(req.body));
+});

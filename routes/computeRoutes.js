@@ -16,5 +16,6 @@ const router = Router();
 
 router.post('/validate', computeController.postValidate);
 router.post('/cnf', computeController.postCnf);
+router.post('/cyk', computeController.postCyk);
 
 export default router;

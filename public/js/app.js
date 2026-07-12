@@ -152,6 +152,8 @@ async function init() {
   grammarsView.init();
   const cnfView = await import('./views/cnf-view.js');
   cnfView.init();
+  const cykView = await import('./views/cyk-view.js');
+  cykView.init();
 }
 
 document.readyState === 'loading'

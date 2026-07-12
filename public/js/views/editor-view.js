@@ -41,6 +41,7 @@ import {
 } from '../app.js';
 import { escapeHtml, showToast, confirmDialog, setLoading, initTooltips } from '../ui.js';
 import { saveDraft, loadDraft, clearDraft, api, downloadGrammarFile } from '../storage.js';
+import { symbolHtml, grammarHtml } from '../grammar-render.js';
 
 /* ------------------------------------------------------------------------ */
 /* Module state                                                              */
@@ -422,12 +423,6 @@ function chipHtml(symbol, kind, isStart = false) {
   return `<span class="${classes}">${escapeHtml(symbol)}${startMark}</span>`;
 }
 
-/** Colour a right-hand side symbol by its kind for the grammar display. */
-function coloredSymbol(symbol, grammar) {
-  const kind = grammar.variables.includes(symbol) ? 'variable' : 'terminal';
-  return `<span class="sym sym-${kind}">${escapeHtml(symbol)}</span>`;
-}
-
 function renderOverview() {
   const grammar = state.grammar;
   if (!grammar) return;
@@ -439,24 +434,6 @@ function renderOverview() {
       '<p class="text-secondary mb-0">Declare symbols and productions to see the grammar here.</p>';
     return;
   }
-
-  // Group productions per variable for the classic textbook display.
-  const byLeft = new Map();
-  for (const production of grammar.productions) {
-    if (!byLeft.has(production.left)) byLeft.set(production.left, []);
-    byLeft.get(production.left).push(production.right);
-  }
-
-  const lines = [...byLeft.entries()].map(([left, alternatives]) => {
-    const rhs = alternatives
-      .map((right) =>
-        right.length === 0
-          ? `<span class="sym">${EPSILON}</span>`
-          : right.map((symbol) => coloredSymbol(symbol, grammar)).join(' ')
-      )
-      .join(' <span class="arrow">|</span> ');
-    return `<div>${coloredSymbol(left, grammar)} <span class="arrow">→</span> ${rhs}</div>`;
-  });
 
   els.overview.innerHTML = `
     <div class="mb-2 small text-secondary">Variables (V)</div>
@@ -470,14 +447,12 @@ function renderOverview() {
       '<span class="text-secondary small">none</span>'
     }</div>
     <div class="mb-2 small text-secondary">Productions (P)</div>
-    <div class="grammar-display">${lines.join('') || '<span class="text-secondary small">none</span>'}</div>
+    ${grammarHtml(grammar)}
     <hr>
     <div class="small text-secondary">
       |V| = ${grammar.variables.length} · |Σ| = ${grammar.terminals.length} ·
       |P| = ${grammar.productions.length} · start: ${
-        grammar.startSymbol
-          ? `<span class="sym sym-variable">${escapeHtml(grammar.startSymbol)}</span>`
-          : '<em>not set</em>'
+        grammar.startSymbol ? symbolHtml(grammar.startSymbol, grammar) : '<em>not set</em>'
       }
     </div>`;
 

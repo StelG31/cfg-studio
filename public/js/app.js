@@ -150,6 +150,8 @@ async function init() {
   editorView.init();
   const grammarsView = await import('./views/grammars-view.js');
   grammarsView.init();
+  const cnfView = await import('./views/cnf-view.js');
+  cnfView.init();
 }
 
 document.readyState === 'loading'

@@ -1,0 +1,590 @@
+/**
+ * core/cnf.js
+ * ---------------------------------------------------------------------------
+ * Purpose:
+ *   Conversion of an arbitrary (valid) context-free grammar into Chomsky
+ *   Normal Form, recording every transformation step with an explanation
+ *   so the UI can teach the algorithm, not just apply it.
+ *
+ *   Pipeline (see docs/algorithms.md §3 for the full theory):
+ *
+ *       START → TERM → BIN → DEL → UNIT → CLEANUP
+ *
+ *   The order is essential: BIN before DEL keeps the ε-elimination
+ *   polynomial (right-hand sides have length ≤ 2, so at most 4 variants
+ *   per rule), and UNIT runs last because DEL creates new unit rules.
+ *
+ *   Every stage is a PURE function grammar → {grammar, changes, explanation}
+ *   (exported individually for unit testing); convertToCnf composes them.
+ *
+ *   Pure ES module — shared verbatim by the browser, the server and Jest.
+ */
+
+import { cloneGrammar, productionKey, productionToString } from './grammar.js';
+import { validateGrammar, computeGenerating, computeReachable } from './validator.js';
+
+/* ------------------------------------------------------------------------ */
+/* Change-entry helpers (what the UI renders per step)                       */
+/* ------------------------------------------------------------------------ */
+
+const added = (production, reason) => ({ type: 'add', production, reason });
+const removed = (production, reason) => ({ type: 'remove', production, reason });
+const replaced = (before, after, reason) => ({ type: 'replace', before, after, reason });
+
+/** Compact display form used inside `reason` strings. */
+const show = productionToString;
+
+/* ------------------------------------------------------------------------ */
+/* Fresh-name generation                                                     */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * A namer that can never collide with existing variables: it records every
+ * name it has seen or produced and appends counters until a name is free.
+ */
+function makeNamer(grammar) {
+  const used = new Set(grammar.variables);
+  const counters = new Map();
+  return {
+    /** Claim `base` if free, otherwise base1, base2, ... */
+    fresh(base) {
+      let candidate = base;
+      let counter = 0;
+      while (used.has(candidate)) {
+        counter += 1;
+        candidate = `${base}${counter}`;
+      }
+      used.add(candidate);
+      return candidate;
+    },
+    /** Sequential names prefix1, prefix2, ... skipping anything taken. */
+    seq(prefix) {
+      let n = counters.get(prefix) ?? 0;
+      let candidate;
+      do {
+        n += 1;
+        candidate = `${prefix}${n}`;
+      } while (used.has(candidate));
+      counters.set(prefix, n);
+      used.add(candidate);
+      return candidate;
+    },
+    /**
+     * A readable variable for terminal `t`: T_a for alphanumeric terminals,
+     * T1, T2, ... for symbols like '(' that cannot appear in a name.
+     */
+    freshForTerminal(t) {
+      return /^[A-Za-z0-9]$/.test(t) ? this.fresh(`T_${t}`) : this.seq('T');
+    },
+  };
+}
+
+/* ------------------------------------------------------------------------ */
+/* CNF predicate                                                             */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Is the grammar already in Chomsky Normal Form?
+ *   A → B C   (two variables) |  A → a  (one terminal) |
+ *   S → ε     (start only, and S must not occur on any right-hand side)
+ */
+export function isCnf(grammar) {
+  const variables = new Set(grammar.variables);
+  const terminals = new Set(grammar.terminals);
+  const startOnRhs = grammar.productions.some((p) => p.right.includes(grammar.startSymbol));
+
+  return grammar.productions.every((production) => {
+    const { left, right } = production;
+    if (right.length === 0) {
+      return left === grammar.startSymbol && !startOnRhs;
+    }
+    if (right.length === 1) {
+      return terminals.has(right[0]);
+    }
+    if (right.length === 2) {
+      return variables.has(right[0]) && variables.has(right[1]);
+    }
+    return false;
+  });
+}
+
+/* ------------------------------------------------------------------------ */
+/* Stage 1 — START: fresh start symbol                                       */
+/* ------------------------------------------------------------------------ */
+
+export function applyStart(grammar) {
+  const result = cloneGrammar(grammar);
+  const changes = [];
+
+  const startOnRhs = grammar.productions.some((p) => p.right.includes(grammar.startSymbol));
+  if (!startOnRhs) {
+    return {
+      grammar: result,
+      changes,
+      explanation:
+        `The start symbol ${grammar.startSymbol} never appears on a right-hand side, ` +
+        'so no new start symbol is needed.',
+    };
+  }
+
+  const namer = makeNamer(result);
+  const newStart = namer.fresh(`${grammar.startSymbol}0`);
+  const rule = { left: newStart, right: [grammar.startSymbol] };
+
+  result.variables = [newStart, ...result.variables];
+  result.productions = [rule, ...result.productions];
+  result.startSymbol = newStart;
+
+  changes.push(
+    added(
+      rule,
+      `${grammar.startSymbol} appears on a right-hand side, so a fresh start symbol ` +
+        `${newStart} is introduced. This makes it safe to add ${newStart} → ε later if ε ∈ L.`
+    )
+  );
+
+  return {
+    grammar: result,
+    changes,
+    explanation:
+      `A new start symbol ${newStart} with the single rule ${show(rule)} guarantees ` +
+      'that the start symbol never occurs on a right-hand side.',
+  };
+}
+
+/* ------------------------------------------------------------------------ */
+/* Stage 2 — TERM: isolate terminals in long right-hand sides                */
+/* ------------------------------------------------------------------------ */
+
+export function applyTerm(grammar) {
+  const result = cloneGrammar(grammar);
+  const changes = [];
+  const terminals = new Set(result.terminals);
+  const namer = makeNamer(result);
+
+  /** terminal → its replacement variable (shared across all rules). */
+  const replacementFor = new Map();
+  const newRules = [];
+
+  result.productions = result.productions.map((production) => {
+    if (production.right.length < 2) return production;
+    if (!production.right.some((symbol) => terminals.has(symbol))) return production;
+
+    const before = { ...production, right: [...production.right] };
+    const right = production.right.map((symbol) => {
+      if (!terminals.has(symbol)) return symbol;
+
+      if (!replacementFor.has(symbol)) {
+        const variable = namer.freshForTerminal(symbol);
+        replacementFor.set(symbol, variable);
+        const rule = { left: variable, right: [symbol] };
+        newRules.push(rule);
+        result.variables.push(variable);
+        changes.push(
+          added(rule, `${variable} stands for the terminal "${symbol}" inside longer rules.`)
+        );
+      }
+      return replacementFor.get(symbol);
+    });
+
+    const after = { left: production.left, right };
+    changes.push(
+      replaced(
+        before,
+        after,
+        `Terminals inside a right-hand side of length ≥ 2 are replaced by their new variables.`
+      )
+    );
+    return after;
+  });
+
+  result.productions.push(...newRules);
+
+  return {
+    grammar: result,
+    changes,
+    explanation:
+      changes.length === 0
+        ? 'No rule of length ≥ 2 contains a terminal — nothing to do.'
+        : 'After TERM, terminals appear only in rules of the exact CNF form A → a.',
+  };
+}
+
+/* ------------------------------------------------------------------------ */
+/* Stage 3 — BIN: binarize long right-hand sides                             */
+/* ------------------------------------------------------------------------ */
+
+export function applyBin(grammar) {
+  const result = cloneGrammar(grammar);
+  const changes = [];
+  const namer = makeNamer(result);
+  const rewritten = [];
+
+  for (const production of result.productions) {
+    if (production.right.length <= 2) {
+      rewritten.push(production);
+      continue;
+    }
+
+    // A → X1 X2 ... Xk   becomes   A → X1 N1, N1 → X2 N2, ..., N(k-2) → X(k-1) Xk
+    const before = { ...production, right: [...production.right] };
+    const symbols = production.right;
+    let carrierLeft = production.left;
+    const cascade = [];
+
+    for (let i = 0; i < symbols.length - 2; i += 1) {
+      const nextVariable = namer.seq('X');
+      cascade.push({ left: carrierLeft, right: [symbols[i], nextVariable] });
+      result.variables.push(nextVariable);
+      carrierLeft = nextVariable;
+    }
+    cascade.push({ left: carrierLeft, right: symbols.slice(-2) });
+
+    changes.push(
+      replaced(
+        before,
+        cascade[0],
+        `${show(before)} has ${symbols.length} symbols — it is split into a cascade of ` +
+          `${cascade.length} binary rules: ${cascade.map(show).join(' ,  ')}.`
+      )
+    );
+    for (const rule of cascade.slice(1)) {
+      changes.push(added(rule, 'Continuation of the cascade above.'));
+    }
+    rewritten.push(...cascade);
+  }
+
+  result.productions = rewritten;
+
+  return {
+    grammar: result,
+    changes,
+    explanation:
+      changes.length === 0
+        ? 'Every right-hand side already has length ≤ 2 — nothing to do.'
+        : 'After BIN, every right-hand side has at most two symbols. ' +
+          'Doing this BEFORE ε-elimination is what keeps the whole conversion polynomial.',
+  };
+}
+
+/* ------------------------------------------------------------------------ */
+/* Stage 4 — DEL: eliminate ε-productions                                    */
+/* ------------------------------------------------------------------------ */
+
+/** The nullable set: variables that can derive ε (fixpoint computation). */
+export function computeNullable(grammar) {
+  const variables = new Set(grammar.variables);
+  const nullable = new Set();
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const production of grammar.productions) {
+      if (nullable.has(production.left)) continue;
+      const allNullable = production.right.every(
+        (symbol) => variables.has(symbol) && nullable.has(symbol)
+      );
+      if (allNullable) {
+        nullable.add(production.left); // includes ε-rules: right = [] is trivially all-nullable
+        changed = true;
+      }
+    }
+  }
+  return nullable;
+}
+
+export function applyDel(grammar) {
+  const result = cloneGrammar(grammar);
+  const changes = [];
+  const nullable = computeNullable(result);
+
+  const keptKeys = new Set();
+  const kept = [];
+
+  const keep = (production, reason) => {
+    const key = productionKey(production);
+    if (keptKeys.has(key)) return;
+    keptKeys.add(key);
+    kept.push(production);
+    if (reason) changes.push(added(production, reason));
+  };
+
+  for (const production of result.productions) {
+    if (production.right.length === 0) {
+      changes.push(
+        removed(production, `ε-productions are eliminated; ${production.left} is nullable.`)
+      );
+      continue;
+    }
+
+    // Original rule (the ∅ subset) survives as-is.
+    keep(production, null);
+
+    // Every subset of nullable occurrences may be omitted. After BIN the
+    // right-hand side has ≤ 2 symbols, so this loop enumerates ≤ 4 subsets.
+    const positions = production.right
+      .map((symbol, index) => (nullable.has(symbol) ? index : -1))
+      .filter((index) => index !== -1);
+
+    for (let mask = 1; mask < 1 << positions.length; mask += 1) {
+      const omit = new Set(positions.filter((_, bit) => mask & (1 << bit)));
+      const right = production.right.filter((_, index) => !omit.has(index));
+      if (right.length === 0) continue; // ε variants are exactly what we are removing
+      keep(
+        { left: production.left, right },
+        `Derived from ${show(production)} by omitting nullable ` +
+          `${omit.size === 1 ? 'symbol' : 'symbols'} ` +
+          `${[...omit].map((i) => production.right[i]).join(', ')} (each can derive ε).`
+      );
+    }
+  }
+
+  // ε ∈ L(G) iff the start symbol is nullable — keep exactly one ε-rule for it.
+  if (nullable.has(result.startSymbol)) {
+    const epsilonRule = { left: result.startSymbol, right: [] };
+    if (!keptKeys.has(productionKey(epsilonRule))) {
+      kept.push(epsilonRule);
+      keptKeys.add(productionKey(epsilonRule));
+      changes.push(
+        added(
+          epsilonRule,
+          `ε belongs to the language, so the start symbol keeps a single ε-rule — ` +
+            'the one ε-production CNF permits.'
+        )
+      );
+    }
+  }
+
+  result.productions = kept;
+
+  return {
+    grammar: result,
+    changes,
+    explanation:
+      changes.length === 0
+        ? 'The grammar has no ε-productions — nothing to do.'
+        : `Nullable variables: { ${[...nullable].join(', ') || '—'} }. Every rule gains variants ` +
+          'with nullable symbols omitted, and all ε-productions disappear' +
+          (nullable.has(result.startSymbol) ? ' (except the start symbol’s, since ε ∈ L).' : '.'),
+  };
+}
+
+/* ------------------------------------------------------------------------ */
+/* Stage 5 — UNIT: eliminate unit productions                                */
+/* ------------------------------------------------------------------------ */
+
+export function applyUnit(grammar) {
+  const result = cloneGrammar(grammar);
+  const changes = [];
+  const variables = new Set(result.variables);
+
+  const isUnit = (production) =>
+    production.right.length === 1 && variables.has(production.right[0]);
+
+  if (!result.productions.some(isUnit)) {
+    return { grammar: result, changes, explanation: 'The grammar has no unit productions — nothing to do.' };
+  }
+
+  /**
+   * Unit-pair closure: unitReach.get(A) = every B with A ⇒* B via unit
+   * rules only (computed as a small BFS per variable — handles cycles).
+   */
+  const unitReach = new Map();
+  for (const variable of result.variables) {
+    const reached = new Set([variable]);
+    const queue = [variable];
+    while (queue.length > 0) {
+      const current = queue.shift();
+      for (const production of result.productions) {
+        if (production.left !== current || !isUnit(production)) continue;
+        const target = production.right[0];
+        if (!reached.has(target)) {
+          reached.add(target);
+          queue.push(target);
+        }
+      }
+    }
+    unitReach.set(variable, reached);
+  }
+
+  const newProductions = [];
+  const seen = new Set();
+
+  for (const variable of result.variables) {
+    for (const target of unitReach.get(variable)) {
+      for (const production of result.productions) {
+        if (production.left !== target || isUnit(production)) continue;
+        const pulled = { left: variable, right: [...production.right] };
+        const key = productionKey(pulled);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        newProductions.push(pulled);
+        if (variable !== target) {
+          changes.push(
+            added(
+              pulled,
+              `${variable} ⇒* ${target} through unit rules, so ${variable} takes over ` +
+                `the non-unit rule ${show(production)} directly.`
+            )
+          );
+        }
+      }
+    }
+  }
+
+  for (const production of result.productions) {
+    if (isUnit(production)) {
+      changes.push(removed(production, 'Unit productions are eliminated.'));
+    }
+  }
+
+  result.productions = newProductions;
+
+  return {
+    grammar: result,
+    changes,
+    explanation:
+      'Every chain A ⇒* B of unit rules is collapsed: A copies B’s non-unit rules and the ' +
+      'unit rules themselves are removed. (Unit cycles are safe — the closure is a reachability set.)',
+  };
+}
+
+/* ------------------------------------------------------------------------ */
+/* Stage 6 — CLEANUP: remove useless symbols                                 */
+/* ------------------------------------------------------------------------ */
+
+export function removeUseless(grammar) {
+  const result = cloneGrammar(grammar);
+  const changes = [];
+
+  // Pass 1: drop non-generating variables (and rules mentioning them).
+  const generating = computeGenerating(result);
+  const nonGenerating = result.variables.filter((v) => !generating.has(v));
+
+  if (nonGenerating.length > 0) {
+    const doomed = new Set(nonGenerating);
+    for (const production of result.productions) {
+      if (doomed.has(production.left) || production.right.some((s) => doomed.has(s))) {
+        changes.push(
+          removed(
+            production,
+            `Removed because { ${nonGenerating.join(', ')} } can never derive a terminal string.`
+          )
+        );
+      }
+    }
+    result.productions = result.productions.filter(
+      (p) => !doomed.has(p.left) && !p.right.some((s) => doomed.has(s))
+    );
+    result.variables = result.variables.filter((v) => !doomed.has(v) || v === result.startSymbol);
+  }
+
+  // Pass 2: drop unreachable variables (order matters — do this second).
+  const reachable = computeReachable(result);
+  const unreachable = result.variables.filter(
+    (v) => !reachable.has(v) && v !== result.startSymbol
+  );
+
+  if (unreachable.length > 0) {
+    const doomed = new Set(unreachable);
+    for (const production of result.productions) {
+      if (doomed.has(production.left)) {
+        changes.push(
+          removed(
+            production,
+            `Removed because { ${unreachable.join(', ')} } is unreachable from the start symbol.`
+          )
+        );
+      }
+    }
+    result.productions = result.productions.filter((p) => !doomed.has(p.left));
+    result.variables = result.variables.filter((v) => !doomed.has(v));
+  }
+
+  return {
+    grammar: result,
+    changes,
+    explanation:
+      changes.length === 0
+        ? 'Every variable is generating and reachable — nothing to clean up.'
+        : 'Non-generating variables are removed first, then unreachable ones — removing dead ' +
+          'ends can cut off further variables. The terminal alphabet Σ stays unchanged.',
+  };
+}
+
+/* ------------------------------------------------------------------------ */
+/* The full pipeline                                                         */
+/* ------------------------------------------------------------------------ */
+
+const STAGES = [
+  { key: 'START', title: 'START — new start symbol', apply: applyStart },
+  { key: 'TERM', title: 'TERM — isolate terminals', apply: applyTerm },
+  { key: 'BIN', title: 'BIN — binarize long rules', apply: applyBin },
+  { key: 'DEL', title: 'DEL — eliminate ε-productions', apply: applyDel },
+  { key: 'UNIT', title: 'UNIT — eliminate unit productions', apply: applyUnit },
+  { key: 'CLEANUP', title: 'CLEANUP — remove useless symbols', apply: removeUseless },
+];
+
+/**
+ * Convert a VALID grammar to Chomsky Normal Form.
+ *
+ * @throws {Error} if the grammar does not pass the shared validator —
+ *                 callers (editor, API service) validate first and show
+ *                 the findings; this guard is a safety net, not a UI path.
+ * @returns {{original: object, alreadyCnf: boolean,
+ *            steps: {stage,title,explanation,changes,grammar}[],
+ *            result: object, emptyLanguage: boolean}}
+ */
+export function convertToCnf(grammar) {
+  const validation = validateGrammar(grammar);
+  if (!validation.valid) {
+    throw new Error('Only a valid grammar can be converted to CNF — fix the validation errors first.');
+  }
+
+  const original = cloneGrammar(grammar);
+
+  if (isCnf(original)) {
+    return {
+      original,
+      alreadyCnf: true,
+      steps: [
+        {
+          stage: 'DONE',
+          title: 'Already in Chomsky Normal Form',
+          explanation:
+            'Every production already has the form A → B C, A → a, or the permitted S → ε — ' +
+            'no transformation is necessary.',
+          changes: [],
+          grammar: cloneGrammar(original),
+        },
+      ],
+      result: cloneGrammar(original),
+      emptyLanguage: false,
+    };
+  }
+
+  const steps = [];
+  let current = original;
+
+  for (const stage of STAGES) {
+    const { grammar: next, changes, explanation } = stage.apply(current);
+    steps.push({
+      stage: stage.key,
+      title: stage.title,
+      explanation,
+      changes,
+      grammar: cloneGrammar(next),
+    });
+    current = next;
+  }
+
+  const emptyLanguage = !current.productions.some((p) => p.left === current.startSymbol);
+
+  return {
+    original,
+    alreadyCnf: false,
+    steps,
+    result: current,
+    emptyLanguage,
+  };
+}

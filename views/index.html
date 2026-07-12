@@ -202,7 +202,20 @@
           Convert the current grammar to CNF step by step: every transformation is shown and explained.
         </p>
       </header>
-      <div id="cnf-root"><!-- populated by cnf-view.js --></div>
+      <div id="cnf-root">
+        <div class="card mb-4">
+          <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <span><i class="bi bi-file-earmark-text me-2" aria-hidden="true"></i>Source grammar</span>
+            <button type="button" class="btn btn-sm btn-primary" id="btnConvertCnf">
+              <i class="bi bi-arrow-left-right" aria-hidden="true"></i> Convert to CNF
+            </button>
+          </div>
+          <div class="card-body" id="cnfSource">
+            <p class="text-secondary mb-0">Loading…</p>
+          </div>
+        </div>
+        <div id="cnfResults"><!-- conversion steps render here --></div>
+      </div>
     </section>
 
     <!-- ————— Section: CYK Simulator ————— -->

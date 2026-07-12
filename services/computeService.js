@@ -17,6 +17,7 @@
 
 import { deserializeGrammar } from '../core/grammar.js';
 import { validateGrammar } from '../core/validator.js';
+import { convertToCnf } from '../core/cnf.js';
 import { HttpError } from '../utils/httpError.js';
 
 /** Hard limits — far above anything a classroom grammar needs. */
@@ -63,4 +64,23 @@ export function parseGrammarPayload(payload) {
 export function validate(payload) {
   const grammar = parseGrammarPayload(payload);
   return validateGrammar(grammar);
+}
+
+/** Parse + require a VALID grammar, or throw 400 with the finding list. */
+function parseValidGrammar(payload) {
+  const grammar = parseGrammarPayload(payload);
+  const result = validateGrammar(grammar);
+  if (!result.valid) {
+    throw HttpError.badRequest(
+      'GRAMMAR_INVALID',
+      'The grammar must be valid before running this algorithm.',
+      { errors: result.errors }
+    );
+  }
+  return grammar;
+}
+
+/** POST /api/cnf — full CNF conversion with the step-by-step trace. */
+export function cnf(payload) {
+  return convertToCnf(parseValidGrammar(payload));
 }

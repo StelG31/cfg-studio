@@ -15,5 +15,6 @@ import * as computeController from '../controllers/computeController.js';
 const router = Router();
 
 router.post('/validate', computeController.postValidate);
+router.post('/cnf', computeController.postCnf);
 
 export default router;

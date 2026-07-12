@@ -23,3 +23,8 @@ function grammarFromBody(body) {
 export const postValidate = asyncHandler(async (req, res) => {
   res.json(computeService.validate(grammarFromBody(req.body)));
 });
+
+/** POST /api/cnf */
+export const postCnf = asyncHandler(async (req, res) => {
+  res.json(computeService.cnf(grammarFromBody(req.body)));
+});

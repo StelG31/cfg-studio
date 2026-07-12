@@ -308,6 +308,36 @@ a {
   flex-shrink: 0;
 }
 
+/* ——— 6b. CNF conversion steps ——— */
+.cnf-change-list .cnf-change {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.45rem 0;
+  border-bottom: 1px dashed var(--cfg-border);
+}
+
+.cnf-change-list .cnf-change:last-child {
+  border-bottom: none;
+}
+
+.cnf-change-list .cnf-change > div {
+  grid-column: 2; /* reason sits under the production, aligned with it */
+}
+
+.cnf-removed {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+/* Keep the accordion visually calm inside the card. */
+#cnfStepsAccordion .accordion-button:not(.collapsed) {
+  background-color: var(--cfg-primary-soft);
+  color: var(--cfg-ink);
+  box-shadow: none;
+}
+
 /* ================================= 7. Footer, utilities, responsive tweaks */
 .app-footer {
   border-top: 1px solid var(--cfg-border);

@@ -123,4 +123,63 @@ Both analyses are **O(|P| · L)** per fixpoint round (L = longest right-hand sid
 - `computeGenerating` and `computeReachable` are exported separately: the CNF converter reuses exactly these analyses for its useless-symbol cleanup stage (single source of truth).
 - Messages are written for students: they name the offending symbol/production and say what to do about it.
 
+---
+
+## 3. Conversion to Chomsky Normal Form
+
+### Theory
+
+A grammar is in **Chomsky Normal Form (CNF)** when every production has one of the forms
+
+- **A → B C** (exactly two variables),
+- **A → a** (exactly one terminal),
+- **S → ε** — only for the start symbol, and only if ε ∈ L(G); the start symbol must then never appear on a right-hand side.
+
+Every CFG can be converted into an equivalent CNF grammar (equivalent = same language). CNF matters here because the CYK algorithm requires it: binary rules are what make the dynamic-programming decomposition of CYK work.
+
+The conversion is a pipeline of five classic transformations plus a cleanup. **Order matters.** CFG Studio uses
+
+> **START → TERM → BIN → DEL → UNIT → CLEANUP**
+
+because running **BIN before DEL** keeps the algorithm polynomial: DEL must expand every subset of nullable symbols in a right-hand side (2^k variants for k nullable occurrences), and after binarization k ≤ 2, so at most 4 variants per rule — whereas DEL on a raw right-hand side of 10 nullable symbols would create 1024 rules. Running **UNIT last** is equally deliberate: DEL can *create* new unit productions (A → BC with C nullable yields A → B), so eliminating units earlier would have to be redone.
+
+### The six stages
+
+1. **START — fresh start symbol.** If the start symbol S appears on any right-hand side, add a new start S₀ with S₀ → S. Guarantees the start symbol never occurs on a right-hand side, which later makes S₀ → ε safe (nothing can duplicate S₀ mid-derivation). If S never appears on a right-hand side, the stage is a documented no-op.
+
+2. **TERM — isolate terminals.** In every right-hand side of length ≥ 2, replace each terminal a by a fresh variable T_a and add T_a → a. After TERM, terminals occur only in rules of the form A → a.
+
+3. **BIN — binarize.** Replace every rule A → X₁X₂…X_k (k ≥ 3) by a cascade A → X₁N₁, N₁ → X₂N₂, …, N_{k−2} → X_{k−1}X_k with fresh variables N_i. After BIN, every right-hand side has length ≤ 2.
+
+4. **DEL — eliminate ε-productions.** Compute the **nullable set** by fixpoint (A is nullable iff some A → α exists with every symbol of α nullable; ε-productions are the base case). Then for every rule, add every variant obtained by deleting any subset of nullable occurrences (dropping variants that become empty), and remove all ε-productions. If the start symbol was nullable, re-add S₀ → ε — the single ε-rule CNF allows.
+
+5. **UNIT — eliminate unit productions.** Compute the **unit-pair closure**: (A, B) is a unit pair iff A ⇒* B using only unit rules (A → B with B a variable). For every unit pair (A, B) and every *non-unit* rule B → α, add A → α; then delete all unit rules. Handles unit cycles (A → B, B → A) correctly because the closure is a reachability computation, not a rewriting loop.
+
+6. **CLEANUP — remove useless symbols.** First drop non-generating variables (reusing `computeGenerating` from the validator), then drop unreachable ones (`computeReachable`) — in that order, since removing non-generating rules can make further variables unreachable. The terminal alphabet is deliberately left unchanged: Σ is part of the language's definition, not of the rules.
+
+### Pseudo-code (DEL, the subtlest stage)
+
+```
+NULLABLE ← fixpoint as above
+P' ← ∅
+for each rule A → X1…Xk in P (k ≥ 1):
+    positions ← { i | Xi ∈ NULLABLE }
+    for each subset D of positions:               # ≤ 2^k, and k ≤ 2 after BIN
+        β ← X1…Xk with the positions in D deleted
+        if β ≠ ε: P' ← P' ∪ { A → β }
+if S ∈ NULLABLE: P' ← P' ∪ { S → ε }
+```
+
+### Complexity
+
+START O(|P|); TERM O(|P|·L); BIN O(|P|·L); DEL O(|P|·2²) = O(|P|) after BIN (the pipeline order is exactly what makes this linear); UNIT O(|V|² + |V|·|P|) for the closure and pull-up; CLEANUP O(|V|·|P|·L). Total: **polynomial in the size of the grammar**, dominated by UNIT. The resulting grammar is at most a constant factor larger except for UNIT, which is bounded by |V|·|P|.
+
+### Implementation details (`core/cnf.js`)
+
+- `convertToCnf(grammar)` returns `{ original, alreadyCnf, steps[], result, emptyLanguage }`. Each step records `{ stage, title, explanation, changes[], grammar }` — `changes` entries are typed (`add` / `remove` / `replace`) and each carries a human-readable `reason`, which is what the UI renders as the per-step explanation. `grammar` is a deep snapshot after the stage, so the UI can show the full intermediate grammar at every point.
+- Each stage is an exported pure function (`applyStart`, `applyTerm`, `applyBin`, `applyDel`, `applyUnit`, `removeUseless`) so tests can verify every invariant in isolation.
+- Fresh names can never collide with user symbols: a namer tracks every used variable and appends counters (S₀ becomes `S0`, or `S01` if taken; terminals map to readable `T_a` when alphanumeric, `T1, T2, …` otherwise; BIN uses `X1, X2, …`).
+- A grammar that is already in CNF is detected upfront (`isCnf`) and reported as a single explanatory no-op step.
+- If the start symbol generates nothing, the result has no productions: the `emptyLanguage` flag lets the UI say "L(G) = ∅" explicitly instead of showing a bare grammar.
+
 

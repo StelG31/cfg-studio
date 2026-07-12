@@ -228,4 +228,56 @@ Three nested loops over (l, i, k) give **O(n³)** cell-combinations, each scanni
 - Besides the table, `runCyk` emits a **step trace** for the animation: `begin` → one `init-cell` per position → one `combine` step per (cell, split) with the variables found and a sentence explaining why → `cell-done` summaries → `verdict`. The UI replays this trace; the algorithm itself runs to completion instantly.
 - Cells are plain JSON objects (arrays, no Maps/Sets) so the same result object can travel over the REST API unchanged.
 
+---
+
+## 5. Parse-tree reconstruction
+
+### Theory
+
+CYK as presented in §4 answers only *yes/no*. To produce a **derivation tree**, each table entry additionally records *how* it was derived — its **backpointers**: on the base row, the terminal rule used; on higher rows, the pair (split length k, rule A → BC). A tree then falls out of a single top-down walk: start at the apex entry (S, cell (1, n)); at each entry follow its backpointer — a terminal rule ends the branch in a leaf, a split rule recurses into the two child cells (i, k, B) and (i+k, l−k, C).
+
+Because entries keep **every** derivation, an ambiguous string has several valid trees; CFG Studio deterministically shows the first one recorded (the leftmost split found), which corresponds to the smallest split length. The tree is the derivation tree **of the CNF grammar** — mapping it back onto the original grammar's rules is a known refinement listed under Future improvements.
+
+The same walk also yields the **leftmost derivation** shown next to the tree: expanding, at every step, the leftmost variable of the current sentential form is exactly a pre-order traversal of the tree.
+
+### Pseudo-code
+
+```
+BUILD(i, l, A):
+    entry ← table(i, l).entry(A);  d ← entry.derivations[0]
+    if d is (terminal rule A → a):  return node(A, children = [leaf(a)])
+    if d is (split k, rule A → BC): return node(A, children = [BUILD(i, k, B),
+                                                               BUILD(i+k, l−k, C)])
+tree ← BUILD(1, n, S)          # ε: a two-node tree S → ε, no table walk
+```
+
+### Complexity
+
+The tree of a CNF derivation of a length-n string has exactly n leaves, n−1 internal binary nodes and n unary (pre-terminal) nodes — **O(n) nodes**, built in O(n) after the O(n³) CYK run.
+
+### Implementation details (`core/parser.js`)
+
+- `buildParseTree(cykResult)` returns `{symbol, span, production, children[]}` nodes (terminal leaves carry `terminal: true`; the ε case yields a two-node tree with an `epsilon` leaf), or `null` for rejected inputs — the UI decides what to say.
+- `leftmostDerivation(tree)` returns the list of sentential forms from S to w, each an array of symbols — rendered under the tree as `S₀ ⇒ … ⇒ w`.
+- Helper metrics (`countNodes`, `treeDepth`) feed the view's footer and the tests.
+
+---
+
+## 6. Parse-tree layout and rendering
+
+### Theory
+
+Drawing a tidy tree means solving one constraint problem: children centred under parents, no overlaps, minimal width. For **binary trees with all leaves at known positions** — exactly what CNF derivation trees are — the classic simplification of the Reingold–Tilford method suffices:
+
+1. **x-coordinates:** a post-order pass assigns each *leaf* the next free horizontal slot; every internal node sits at the midpoint of its children's x-positions.
+2. **y-coordinates:** the node's depth.
+
+This is O(n), produces no crossings, and keeps uniform spacing — visually indistinguishable from full Reingold–Tilford on these trees.
+
+### Implementation details (`public/js/tree.js`)
+
+- Pure SVG, hand-rolled — no D3 or drawing library. Nodes are rounded rectangles (indigo for variables, teal for terminal leaves, grey italic ε), edges are plain lines drawn parent-bottom → child-top.
+- **Interaction** is implemented directly on the SVG `viewBox`: wheel-zoom around the cursor (screen → SVG coordinate conversion via `getBoundingClientRect`), pointer-drag panning, +/− buttons and **fit-to-view** (viewBox reset to the content bounding box with padding). Works with mouse and touch (pointer events).
+- Colours are set as SVG attributes, not CSS classes, so the **Download SVG** export produces a standalone file that renders identically outside the app.
+
 

@@ -154,6 +154,8 @@ async function init() {
   cnfView.init();
   const cykView = await import('./views/cyk-view.js');
   cykView.init();
+  const treeView = await import('./views/tree-view.js');
+  treeView.init();
 }
 
 document.readyState === 'loading'

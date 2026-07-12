@@ -320,7 +320,44 @@
           The derivation tree of the last accepted string — pan, zoom and explore it.
         </p>
       </header>
-      <div id="tree-root"><!-- populated by tree-view.js --></div>
+      <div id="tree-root">
+        <div class="card mb-4">
+          <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <span><i class="bi bi-diagram-2 me-2" aria-hidden="true"></i>Derivation tree</span>
+            <div class="btn-group btn-group-sm" role="group" aria-label="Tree controls">
+              <button type="button" class="btn btn-outline-secondary" id="btnTreeZoomOut"
+                      data-bs-toggle="tooltip" title="Zoom out">
+                <i class="bi bi-zoom-out" aria-hidden="true"></i>
+              </button>
+              <button type="button" class="btn btn-outline-secondary" id="btnTreeFit"
+                      data-bs-toggle="tooltip" title="Fit the whole tree in view">
+                <i class="bi bi-arrows-fullscreen" aria-hidden="true"></i>
+              </button>
+              <button type="button" class="btn btn-outline-secondary" id="btnTreeZoomIn"
+                      data-bs-toggle="tooltip" title="Zoom in">
+                <i class="bi bi-zoom-in" aria-hidden="true"></i>
+              </button>
+              <button type="button" class="btn btn-outline-primary" id="btnTreeDownload"
+                      data-bs-toggle="tooltip" title="Download as SVG">
+                <i class="bi bi-download" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+          <div class="card-body p-0">
+            <div id="treeCanvas" class="tree-canvas d-flex align-items-center justify-content-center">
+              <p class="text-secondary mb-0 p-4">Run an accepted CYK simulation to see its parse tree.</p>
+            </div>
+          </div>
+          <div class="card-footer small text-secondary" id="treeMeta"></div>
+        </div>
+
+        <div class="card d-none" id="treeDerivationCard">
+          <div class="card-header">
+            <i class="bi bi-arrow-right-circle me-2" aria-hidden="true"></i>Leftmost derivation
+          </div>
+          <div class="card-body" id="treeDerivation"></div>
+        </div>
+      </div>
     </section>
 
     <!-- ————— Section: My Grammars ————— -->

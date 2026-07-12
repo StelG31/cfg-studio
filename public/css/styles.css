@@ -447,6 +447,35 @@ a {
   outline: 1px solid #f0c674;
 }
 
+/* ——— 6d. Parse tree ——— */
+.tree-canvas {
+  height: 480px;
+  background:
+    linear-gradient(var(--cfg-border) 1px, transparent 1px) 0 0 / 100% 40px,
+    linear-gradient(90deg, var(--cfg-border) 1px, transparent 1px) 0 0 / 40px 100%;
+  background-color: #fcfcfd;
+  border-radius: 0 0 0.375rem 0.375rem;
+  overflow: hidden;
+  touch-action: none; /* let the SVG's pointer handlers own gestures */
+}
+
+.derivation-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  line-height: 2.2;
+}
+
+.derivation-arrow {
+  color: var(--cfg-primary);
+  font-weight: 600;
+}
+
+@media (max-width: 575.98px) {
+  .tree-canvas { height: 340px; }
+}
+
 /* ================================= 7. Footer, utilities, responsive tweaks */
 .app-footer {
   border-top: 1px solid var(--cfg-border);

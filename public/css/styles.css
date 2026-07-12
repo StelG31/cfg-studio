@@ -1,0 +1,291 @@
+/**
+ * public/css/styles.css
+ * ---------------------------------------------------------------------------
+ * Purpose:
+ *   The visual identity of CFG Studio, layered on top of Bootstrap 5.
+ *   Design goals: minimal, clean, academic — a calm near-white canvas,
+ *   a single deep-indigo accent, monospace typography for everything that
+ *   is "grammar text", and restrained motion.
+ *
+ * Structure of this file:
+ *   1. Design tokens (CSS custom properties)
+ *   2. Base page + typography
+ *   3. Navigation bar
+ *   4. Section switching + headers
+ *   5. Cards & shared components (chips, grammar text, panels)
+ *   6. Feature areas (editor / CNF / CYK / tree) — extended per feature
+ *   7. Footer + small utilities + responsive tweaks
+ */
+
+/* ========================================================== 1. Design tokens */
+:root {
+  /* Palette — one accent colour keeps the tool looking academic, not flashy. */
+  --cfg-bg: #f6f7f9;            /* page background                       */
+  --cfg-surface: #ffffff;       /* cards, panels                         */
+  --cfg-border: #e4e7ec;        /* hairline borders                      */
+  --cfg-ink: #1f2733;           /* primary text                          */
+  --cfg-muted: #5f6b7a;         /* secondary text                        */
+  --cfg-primary: #3d5a99;       /* accent: deep academic indigo          */
+  --cfg-primary-dark: #324a80;  /* accent hover/active                   */
+  --cfg-primary-soft: #eef2fa;  /* accent tint for backgrounds           */
+  --cfg-navy: #1e2a3a;          /* navbar / footer ink                   */
+  --cfg-terminal: #0f766e;      /* teal — terminal symbols               */
+  --cfg-terminal-soft: #e8f5f3;
+  --cfg-variable: #3d5a99;      /* indigo — variable (non-terminal) syms */
+  --cfg-variable-soft: #eef2fa;
+  --cfg-accept: #15803d;
+  --cfg-reject: #b42318;
+  --cfg-warning: #b54708;
+
+  /* Typography */
+  --cfg-font-mono: 'Cascadia Code', Consolas, 'SF Mono', Menlo, 'Courier New', monospace;
+  --cfg-font-brand: Georgia, 'Times New Roman', serif;
+}
+
+/* ====================================================== 2. Base + typography */
+body {
+  background-color: var(--cfg-bg);
+  color: var(--cfg-ink);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+main {
+  flex: 1 0 auto; /* pin the footer to the bottom on short pages */
+}
+
+/* Re-point Bootstrap's interactive colours at our accent. */
+.btn-primary {
+  --bs-btn-bg: var(--cfg-primary);
+  --bs-btn-border-color: var(--cfg-primary);
+  --bs-btn-hover-bg: var(--cfg-primary-dark);
+  --bs-btn-hover-border-color: var(--cfg-primary-dark);
+  --bs-btn-active-bg: var(--cfg-primary-dark);
+  --bs-btn-active-border-color: var(--cfg-primary-dark);
+  --bs-btn-disabled-bg: var(--cfg-primary);
+  --bs-btn-disabled-border-color: var(--cfg-primary);
+}
+
+.btn-outline-primary {
+  --bs-btn-color: var(--cfg-primary);
+  --bs-btn-border-color: var(--cfg-primary);
+  --bs-btn-hover-bg: var(--cfg-primary);
+  --bs-btn-hover-border-color: var(--cfg-primary);
+  --bs-btn-active-bg: var(--cfg-primary-dark);
+  --bs-btn-active-border-color: var(--cfg-primary-dark);
+}
+
+a {
+  color: var(--cfg-primary);
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--cfg-primary);
+  box-shadow: 0 0 0 0.2rem rgba(61, 90, 153, 0.15);
+}
+
+/* ========================================================== 3. Navigation bar */
+.app-navbar {
+  background-color: var(--cfg-navy);
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.25);
+}
+
+.brand-title {
+  font-family: var(--cfg-font-brand);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-size: 1.25rem;
+}
+
+.brand-icon {
+  color: #8fa8d8; /* softened accent against the dark navbar */
+  font-size: 1.3rem;
+}
+
+.app-navbar .nav-link {
+  color: rgba(255, 255, 255, 0.78);
+  border-bottom: 2px solid transparent;
+  margin-inline: 0.15rem;
+}
+
+.app-navbar .nav-link:hover {
+  color: #ffffff;
+}
+
+.app-navbar .nav-link.active {
+  color: #ffffff;
+  border-bottom-color: #8fa8d8; /* subtle underline marks the active tool */
+}
+
+.app-navbar .nav-link .bi {
+  margin-right: 0.25rem;
+}
+
+.current-grammar {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.875rem;
+  max-width: 18rem;
+}
+
+#currentGrammarName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Amber dot signalling unsaved changes on the current grammar. */
+.unsaved-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #f59e0b;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* ============================================= 4. Section switching + headers */
+/* The app is a single page: exactly one .app-section is visible at a time
+   (app.js toggles .active based on the URL hash). */
+.app-section {
+  display: none;
+}
+
+.app-section.active {
+  display: block;
+  animation: section-fade-in 0.25s ease;
+}
+
+@keyframes section-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.section-header {
+  margin-bottom: 1.5rem;
+}
+
+.section-title {
+  font-size: 1.5rem;
+  font-weight: 650;
+  margin-bottom: 0.25rem;
+}
+
+.section-subtitle {
+  color: var(--cfg-muted);
+  max-width: 46rem;
+  margin-bottom: 0;
+}
+
+/* ============================================ 5. Cards & shared components */
+.card {
+  border-color: var(--cfg-border);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.card-header {
+  background-color: #fbfcfd;
+  border-bottom-color: var(--cfg-border);
+  font-weight: 600;
+}
+
+/* Anything that renders grammar notation uses the monospace stack. */
+.grammar-text,
+.grammar-input {
+  font-family: var(--cfg-font-mono);
+  font-size: 0.95rem;
+}
+
+/* A rendered grammar (read-only listing of productions). */
+.grammar-display {
+  font-family: var(--cfg-font-mono);
+  font-size: 0.95rem;
+  line-height: 1.9;
+  margin-bottom: 0;
+  overflow-x: auto;
+}
+
+.grammar-display .arrow {
+  color: var(--cfg-muted);
+  padding-inline: 0.35rem;
+}
+
+/* Symbol chips: compact visual inventory of declared symbols. */
+.symbol-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--cfg-font-mono);
+  font-size: 0.85rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 0.4rem;
+  border: 1px solid transparent;
+  margin: 0.125rem;
+}
+
+.chip-variable {
+  color: var(--cfg-variable);
+  background-color: var(--cfg-variable-soft);
+  border-color: #d5def0;
+}
+
+.chip-terminal {
+  color: var(--cfg-terminal);
+  background-color: var(--cfg-terminal-soft);
+  border-color: #cbe8e4;
+}
+
+.chip-start {
+  outline: 2px solid #f0c674; /* halo marks the start symbol */
+  outline-offset: 1px;
+}
+
+/* Inline highlight for symbols inside prose/explanations. */
+.sym {
+  font-family: var(--cfg-font-mono);
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+}
+
+.sym-variable { color: var(--cfg-variable); background: var(--cfg-variable-soft); }
+.sym-terminal { color: var(--cfg-terminal); background: var(--cfg-terminal-soft); }
+
+/* Accept / reject verdict banners (CYK). */
+.verdict-banner {
+  border-radius: 0.5rem;
+  padding: 0.9rem 1.25rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.verdict-accepted {
+  color: var(--cfg-accept);
+  background-color: #e9f7ee;
+  border: 1px solid #b5e2c4;
+}
+
+.verdict-rejected {
+  color: var(--cfg-reject);
+  background-color: #fdeeec;
+  border: 1px solid #f4c1ba;
+}
+
+/* ================================================ 6. Feature areas (seeded) */
+/* Editor, CNF, CYK and tree specific rules are appended in their own
+   implementation steps to keep each module self-contained. */
+
+/* ================================= 7. Footer, utilities, responsive tweaks */
+.app-footer {
+  border-top: 1px solid var(--cfg-border);
+  color: var(--cfg-muted);
+  background-color: #fbfcfd;
+}
+
+/* Slightly tighter headings on small screens. */
+@media (max-width: 575.98px) {
+  .section-title { font-size: 1.25rem; }
+  .section-subtitle { font-size: 0.925rem; }
+}

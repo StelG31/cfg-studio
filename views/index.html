@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CFG Studio — an educational environment for designing Context-Free Grammars, converting them to Chomsky Normal Form, and testing strings with the CYK algorithm.">
+  <title>CFG Studio — Context-Free Grammar Workbench</title>
+
+  <link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
+  <!-- Bootstrap is served locally from node_modules (no CDN): works offline
+       and keeps every dependency under npm's control. -->
+  <link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/vendor/bootstrap-icons/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+
+  <!-- ======================================================== Top navigation -->
+  <nav class="navbar navbar-expand-lg navbar-dark app-navbar sticky-top">
+    <div class="container-xxl">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="#editor" data-section-link="editor">
+        <i class="bi bi-diagram-3-fill brand-icon" aria-hidden="true"></i>
+        <span class="brand-title">CFG&nbsp;Studio</span>
+      </a>
+
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav"
+              aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="collapse navbar-collapse" id="mainNav">
+        <ul class="navbar-nav me-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="#editor" data-section-link="editor">
+              <i class="bi bi-pencil-square" aria-hidden="true"></i> Editor
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#cnf" data-section-link="cnf">
+              <i class="bi bi-arrow-left-right" aria-hidden="true"></i> CNF Conversion
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#cyk" data-section-link="cyk">
+              <i class="bi bi-grid-3x3" aria-hidden="true"></i> CYK Simulator
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#tree" data-section-link="tree">
+              <i class="bi bi-diagram-2" aria-hidden="true"></i> Parse Tree
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#grammars" data-section-link="grammars">
+              <i class="bi bi-folder2-open" aria-hidden="true"></i> My Grammars
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#help" data-section-link="help">
+              <i class="bi bi-question-circle" aria-hidden="true"></i> Help
+            </a>
+          </li>
+        </ul>
+
+        <!-- Current-grammar indicator (name + unsaved marker), managed by app.js -->
+        <span class="navbar-text current-grammar d-none d-lg-inline-flex align-items-center gap-2"
+              id="currentGrammarIndicator" title="The grammar you are currently working on">
+          <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+          <span id="currentGrammarName">Untitled grammar</span>
+          <span id="unsavedDot" class="unsaved-dot d-none" title="Unsaved changes"></span>
+        </span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ======================================================== Main content -->
+  <main class="container-xxl py-4">
+
+    <!-- ————— Section: Grammar Editor ————— -->
+    <section id="section-editor" class="app-section" aria-labelledby="editor-heading">
+      <header class="section-header">
+        <h1 id="editor-heading" class="section-title">Grammar Editor</h1>
+        <p class="section-subtitle">
+          Define the four components of a context-free grammar
+          G&nbsp;=&nbsp;(V,&nbsp;Σ,&nbsp;P,&nbsp;S): variables, terminals, productions and the start symbol.
+        </p>
+      </header>
+      <div id="editor-root"><!-- populated by editor-view.js --></div>
+    </section>
+
+    <!-- ————— Section: CNF Conversion ————— -->
+    <section id="section-cnf" class="app-section" aria-labelledby="cnf-heading">
+      <header class="section-header">
+        <h1 id="cnf-heading" class="section-title">Chomsky Normal Form</h1>
+        <p class="section-subtitle">
+          Convert the current grammar to CNF step by step: every transformation is shown and explained.
+        </p>
+      </header>
+      <div id="cnf-root"><!-- populated by cnf-view.js --></div>
+    </section>
+
+    <!-- ————— Section: CYK Simulator ————— -->
+    <section id="section-cyk" class="app-section" aria-labelledby="cyk-heading">
+      <header class="section-header">
+        <h1 id="cyk-heading" class="section-title">CYK Simulator</h1>
+        <p class="section-subtitle">
+          Test whether a string belongs to the language of the grammar with the
+          Cocke–Younger–Kasami algorithm, cell by cell.
+        </p>
+      </header>
+      <div id="cyk-root"><!-- populated by cyk-view.js --></div>
+    </section>
+
+    <!-- ————— Section: Parse Tree ————— -->
+    <section id="section-tree" class="app-section" aria-labelledby="tree-heading">
+      <header class="section-header">
+        <h1 id="tree-heading" class="section-title">Parse Tree</h1>
+        <p class="section-subtitle">
+          The derivation tree of the last accepted string — pan, zoom and explore it.
+        </p>
+      </header>
+      <div id="tree-root"><!-- populated by tree-view.js --></div>
+    </section>
+
+    <!-- ————— Section: My Grammars ————— -->
+    <section id="section-grammars" class="app-section" aria-labelledby="grammars-heading">
+      <header class="section-header">
+        <h1 id="grammars-heading" class="section-title">My Grammars</h1>
+        <p class="section-subtitle">
+          Saved grammars, ready-made sample grammars, and JSON import/export.
+        </p>
+      </header>
+      <div id="grammars-root"><!-- populated by grammars-view.js --></div>
+    </section>
+
+    <!-- ————— Section: Help ————— -->
+    <section id="section-help" class="app-section" aria-labelledby="help-heading">
+      <header class="section-header">
+        <h1 id="help-heading" class="section-title">Help &amp; Conventions</h1>
+        <p class="section-subtitle">
+          How to write grammars in CFG Studio and what each tool does.
+        </p>
+      </header>
+      <div id="help-root"><!-- populated in a later step --></div>
+    </section>
+
+  </main>
+
+  <!-- ======================================================== Footer -->
+  <footer class="app-footer text-center py-3">
+    <div class="container-xxl">
+      <small>
+        CFG Studio — an educational workbench for Context-Free Grammars ·
+        Bachelor's Thesis project · Built with Node.js, Express &amp; Bootstrap
+      </small>
+    </div>
+  </footer>
+
+  <!-- Toast notifications land here (managed by ui.js) -->
+  <div id="toastContainer" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+  <!-- Dynamically created modals (confirmations, save dialogs) land here -->
+  <div id="modalContainer"></div>
+
+  <!-- Bootstrap bundle (Popper included) — classic script, exposes window.bootstrap -->
+  <script src="/vendor/bootstrap/js/bootstrap.bundle.min.js" defer></script>
+  <!-- Application entry point — native ES module, no bundler required -->
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

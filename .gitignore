@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Environment configuration (real values stay local; see .env.example)
+.env
+
+# User-saved grammars (runtime data, not source)
+data/grammars/*.json
+!data/grammars/.gitkeep
+
+# Test coverage output
+coverage/
+
+# Logs and OS noise
+*.log
+.DS_Store
+Thumbs.db

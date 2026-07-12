@@ -79,6 +79,12 @@ export function markGrammarSaved(id) {
   updateGrammarIndicator();
 }
 
+/** Set the unsaved flag explicitly (used when restoring a clean draft). */
+export function setDirty(value) {
+  state.dirty = Boolean(value);
+  updateGrammarIndicator();
+}
+
 /* ------------------------------------------------------------------------ */
 /* Navbar indicator: current grammar name + unsaved dot                      */
 /* ------------------------------------------------------------------------ */
@@ -142,6 +148,8 @@ async function init() {
   // Each exports an init() that renders into its #<name>-root container.
   const editorView = await import('./views/editor-view.js');
   editorView.init();
+  const grammarsView = await import('./views/grammars-view.js');
+  grammarsView.init();
 }
 
 document.readyState === 'loading'

@@ -30,9 +30,17 @@ import {
   EPSILON,
 } from '/core/grammar.js';
 import { validateGrammar } from '/core/validator.js';
-import { state, events, markGrammarEdited, setGrammar } from '../app.js';
-import { escapeHtml, showToast, confirmDialog, initTooltips } from '../ui.js';
-import { saveDraft, loadDraft, clearDraft } from '../storage.js';
+import { serializeGrammar } from '/core/grammar.js';
+import {
+  state,
+  events,
+  markGrammarEdited,
+  markGrammarSaved,
+  setGrammar,
+  setDirty,
+} from '../app.js';
+import { escapeHtml, showToast, confirmDialog, setLoading, initTooltips } from '../ui.js';
+import { saveDraft, loadDraft, clearDraft, api, downloadGrammarFile } from '../storage.js';
 
 /* ------------------------------------------------------------------------ */
 /* Module state                                                              */
@@ -95,6 +103,9 @@ export function init() {
     setGrammar(createEmptyGrammar());
     showToast('Started a new blank grammar.', 'info');
   });
+
+  document.getElementById('btnSaveGrammar').addEventListener('click', saveGrammar);
+  document.getElementById('btnExportGrammar').addEventListener('click', exportGrammar);
 
   // Another view (My Grammars, samples, import) replaced the working grammar.
   events.addEventListener('grammar-loaded', fillFormFromGrammar);
@@ -210,6 +221,8 @@ function fillFormFromGrammar() {
   renderRows();
   renderOverview();
   renderValidation();
+  // Keep the draft in sync so a reload restores the freshly loaded grammar.
+  scheduleDraftSave();
 }
 
 /** Restore the verbatim form snapshot saved as a draft. */
@@ -234,6 +247,9 @@ function applyDraft(draft) {
   els.start.value = draft.startSymbol ?? '';
   renderRows();
   rebuildGrammar();
+  // rebuildGrammar marks the grammar dirty; restore the flag the draft
+  // actually had (a freshly loaded grammar reloads as clean).
+  setDirty(draft.dirty ?? true);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -533,6 +549,53 @@ function renderValidation() {
 }
 
 /* ------------------------------------------------------------------------ */
+/* Save / export actions                                                     */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Persist the working grammar on the server. Only valid grammars are
+ * accepted (the server enforces the same rule with the same validator —
+ * this early client check just gives faster feedback).
+ */
+async function saveGrammar() {
+  const grammar = state.grammar;
+  const { valid, errors } = validateGrammar(grammar);
+  if (!valid) {
+    showToast(
+      `Cannot save: the grammar has ${errors.length} validation error${errors.length === 1 ? '' : 's'}. ` +
+        'Fix the problems shown in the validation panel first.',
+      'danger',
+      6000
+    );
+    return;
+  }
+
+  setLoading(true, 'Saving grammar…');
+  try {
+    if (state.grammarId) {
+      await api.updateGrammar(state.grammarId, grammar);
+      showToast(`Updated "${grammar.name}".`, 'success');
+    } else {
+      const doc = await api.createGrammar(grammar);
+      markGrammarSaved(doc.id);
+      showToast(`Saved "${grammar.name}".`, 'success');
+    }
+    markGrammarSaved(state.grammarId);
+    scheduleDraftSave(); // persist the clean state (id + dirty=false)
+  } catch (err) {
+    showToast(`Save failed: ${err.message}`, 'danger', 6000);
+  } finally {
+    setLoading(false);
+  }
+}
+
+/** Download the working grammar as a JSON file (allowed even mid-edit). */
+function exportGrammar() {
+  downloadGrammarFile(state.grammar, serializeGrammar(state.grammar));
+  showToast('Grammar exported as JSON.', 'success');
+}
+
+/* ------------------------------------------------------------------------ */
 /* Draft autosave                                                            */
 /* ------------------------------------------------------------------------ */
 
@@ -547,6 +610,7 @@ function scheduleDraftSave() {
       startSymbol: els.start.value,
       rows: rows.map(({ left, rhsText }) => ({ left, rhsText })),
       grammarId: state.grammarId,
+      dirty: state.dirty,
     });
   }, 400);
 }

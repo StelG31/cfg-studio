@@ -27,6 +27,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import computeRoutes from './routes/computeRoutes.js';
+import grammarRoutes from './routes/grammarRoutes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -72,6 +73,7 @@ app.use(
 // ---------------------------------------------------------------------------
 
 app.use('/api', computeRoutes);
+app.use('/api', grammarRoutes);
 
 // ---------------------------------------------------------------------------
 // Pages & health check

@@ -93,12 +93,22 @@
 
             <!-- Symbols: V, Σ and S of the 4-tuple -->
             <div class="card mb-4">
-              <div class="card-header d-flex align-items-center justify-content-between">
+              <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
                 <span><i class="bi bi-collection me-2" aria-hidden="true"></i>Symbols</span>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewGrammar"
-                        data-bs-toggle="tooltip" title="Start over with a blank grammar">
-                  <i class="bi bi-file-earmark-plus" aria-hidden="true"></i> New grammar
-                </button>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Grammar actions">
+                  <button type="button" class="btn btn-outline-secondary" id="btnNewGrammar"
+                          data-bs-toggle="tooltip" title="Start over with a blank grammar">
+                    <i class="bi bi-file-earmark-plus" aria-hidden="true"></i> New
+                  </button>
+                  <button type="button" class="btn btn-outline-primary" id="btnSaveGrammar"
+                          data-bs-toggle="tooltip" title="Save this grammar on the server">
+                    <i class="bi bi-save" aria-hidden="true"></i> Save
+                  </button>
+                  <button type="button" class="btn btn-outline-primary" id="btnExportGrammar"
+                          data-bs-toggle="tooltip" title="Download this grammar as a JSON file">
+                    <i class="bi bi-download" aria-hidden="true"></i> Export
+                  </button>
+                </div>
               </div>
               <div class="card-body">
                 <div class="row g-3">
@@ -226,7 +236,42 @@
           Saved grammars, ready-made sample grammars, and JSON import/export.
         </p>
       </header>
-      <div id="grammars-root"><!-- populated by grammars-view.js --></div>
+      <div id="grammars-root">
+        <div class="row g-4">
+
+          <!-- Saved grammars + import -->
+          <div class="col-lg-7">
+            <div class="card">
+              <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <span><i class="bi bi-folder2-open me-2" aria-hidden="true"></i>Saved grammars</span>
+                <div>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="btnImportGrammar"
+                          data-bs-toggle="tooltip" title="Load a grammar from a JSON file">
+                    <i class="bi bi-upload" aria-hidden="true"></i> Import JSON
+                  </button>
+                  <input type="file" id="importFileInput" accept=".json,application/json" hidden>
+                </div>
+              </div>
+              <div class="card-body" id="savedGrammarsList">
+                <p class="text-secondary mb-0">Loading…</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Built-in sample grammars -->
+          <div class="col-lg-5">
+            <div class="card">
+              <div class="card-header">
+                <i class="bi bi-stars me-2" aria-hidden="true"></i>Sample grammars
+              </div>
+              <div class="card-body" id="sampleGrammarsList">
+                <p class="text-secondary mb-0">Loading…</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
     </section>
 
     <!-- ————— Section: Help ————— -->

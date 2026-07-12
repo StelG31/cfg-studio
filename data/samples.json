@@ -1,0 +1,110 @@
+[
+  {
+    "id": "sample-balanced-parentheses",
+    "name": "Balanced Parentheses",
+    "description": "All strings of correctly nested and concatenated parentheses, including the empty string.",
+    "variables": ["S"],
+    "terminals": ["(", ")"],
+    "startSymbol": "S",
+    "productions": [
+      { "left": "S", "right": ["(", "S", ")"] },
+      { "left": "S", "right": ["S", "S"] },
+      { "left": "S", "right": [] }
+    ],
+    "testStrings": {
+      "accept": ["()", "(())", "()()", "(()())"],
+      "reject": ["(", "())", ")(", "(()"]
+    }
+  },
+  {
+    "id": "sample-anbn",
+    "name": "aⁿbⁿ",
+    "description": "The canonical non-regular language { aⁿbⁿ | n ≥ 0 }: some a's followed by exactly as many b's.",
+    "variables": ["S"],
+    "terminals": ["a", "b"],
+    "startSymbol": "S",
+    "productions": [
+      { "left": "S", "right": ["a", "S", "b"] },
+      { "left": "S", "right": [] }
+    ],
+    "testStrings": {
+      "accept": ["ab", "aabb", "aaabbb"],
+      "reject": ["a", "ba", "abab", "aab"]
+    }
+  },
+  {
+    "id": "sample-arithmetic-expressions",
+    "name": "Arithmetic Expressions",
+    "description": "Unambiguous expression grammar with precedence: + over factors, * binds tighter, parentheses group; 'a' stands for an identifier.",
+    "variables": ["E", "T", "F"],
+    "terminals": ["a", "+", "*", "(", ")"],
+    "startSymbol": "E",
+    "productions": [
+      { "left": "E", "right": ["E", "+", "T"] },
+      { "left": "E", "right": ["T"] },
+      { "left": "T", "right": ["T", "*", "F"] },
+      { "left": "T", "right": ["F"] },
+      { "left": "F", "right": ["(", "E", ")"] },
+      { "left": "F", "right": ["a"] }
+    ],
+    "testStrings": {
+      "accept": ["a", "a+a", "a+a*a", "(a+a)*a"],
+      "reject": ["a+", "*a", "(a", "a++a"]
+    }
+  },
+  {
+    "id": "sample-simple-expressions",
+    "name": "Simple Expression Grammar",
+    "description": "The compact—but ambiguous—expression grammar often used to introduce ambiguity: one variable does everything.",
+    "variables": ["S"],
+    "terminals": ["a", "+", "*", "(", ")"],
+    "startSymbol": "S",
+    "productions": [
+      { "left": "S", "right": ["S", "+", "S"] },
+      { "left": "S", "right": ["S", "*", "S"] },
+      { "left": "S", "right": ["(", "S", ")"] },
+      { "left": "S", "right": ["a"] }
+    ],
+    "testStrings": {
+      "accept": ["a", "a+a*a", "(a)", "(a+a)*a"],
+      "reject": ["+a", "a(", "()", "a+"]
+    }
+  },
+  {
+    "id": "sample-palindromes",
+    "name": "Palindromes over {a, b}",
+    "description": "Strings that read the same forwards and backwards, over the alphabet {a, b}.",
+    "variables": ["S"],
+    "terminals": ["a", "b"],
+    "startSymbol": "S",
+    "productions": [
+      { "left": "S", "right": ["a", "S", "a"] },
+      { "left": "S", "right": ["b", "S", "b"] },
+      { "left": "S", "right": ["a"] },
+      { "left": "S", "right": ["b"] },
+      { "left": "S", "right": [] }
+    ],
+    "testStrings": {
+      "accept": ["a", "aba", "abba", "babab"],
+      "reject": ["ab", "aab", "abab"]
+    }
+  },
+  {
+    "id": "sample-equal-as-bs",
+    "name": "Equal numbers of a's and b's",
+    "description": "All strings containing exactly as many a's as b's, in any order.",
+    "variables": ["S"],
+    "terminals": ["a", "b"],
+    "startSymbol": "S",
+    "productions": [
+      { "left": "S", "right": ["a", "S", "b"] },
+      { "left": "S", "right": ["b", "S", "a"] },
+      { "left": "S", "right": ["S", "S"] },
+      { "left": "S", "right": [] }
+    ],
+    "testStrings": {
+      "accept": ["ab", "ba", "abba", "baab", "aabb"],
+      "reject": ["a", "b", "aab", "abb"]
+    }
+  }
+]

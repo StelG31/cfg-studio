@@ -31,6 +31,19 @@ import {
 
 export const SEVERITY = { ERROR: 'error', WARNING: 'warning' };
 
+/**
+ * Every validation result is a list of FINDINGS with this exact shape:
+ *
+ *   { code:     string   — stable machine-readable id (tests/API match on
+ *                          this, never on message wording),
+ *     severity: 'error' | 'warning',
+ *     message:  string   — student-facing sentence naming the offending
+ *                          symbol/production and what to do about it,
+ *     context:  object   — structured extras ({symbol}, {production, index})
+ *                          so UIs can highlight the exact culprit }
+ *
+ * The two constructors below are the only places findings are created.
+ */
 function error(code, message, context = {}) {
   return { code, severity: SEVERITY.ERROR, message, context };
 }
@@ -58,12 +71,18 @@ export function computeGenerating(grammar) {
   const terminals = new Set(grammar.terminals);
   const generating = new Set();
 
+  // Invariant: `generating` only grows and is bounded by |V|, so the loop
+  // makes at most |V|+1 passes; a pass that adds nothing is the fixpoint
+  // proof that no further variable can qualify.
   let changed = true;
   while (changed) {
     changed = false;
     for (const production of grammar.productions) {
       if (generating.has(production.left)) continue;
       if (!variables.has(production.left)) continue; // ignore malformed rows
+      // A rule "counts" when everything on its right side can already be
+      // finished: a terminal is finished by definition, a variable only if
+      // proven generating in an earlier pass. ε-rules qualify vacuously.
       const allDerivable = production.right.every(
         (symbol) => terminals.has(symbol) || generating.has(symbol)
       );
@@ -90,6 +109,10 @@ export function computeReachable(grammar) {
   reachable.add(grammar.startSymbol);
   const queue = [grammar.startSymbol];
 
+  // Standard BFS: a variable enters the queue exactly once (guarded by the
+  // `reachable` set), and processing it expands every rule it owns — so the
+  // loop terminates after at most |V| dequeues and visits each production
+  // of a reachable variable exactly once.
   while (queue.length > 0) {
     const current = queue.shift();
     for (const production of grammar.productions) {
@@ -316,7 +339,14 @@ export function validateGrammar(grammar) {
 /* Helpers                                                                   */
 /* ------------------------------------------------------------------------ */
 
-/** Every value that appears more than once (each reported a single time). */
+/**
+ * Every value that appears more than once in `list`, each reported a single
+ * time regardless of multiplicity (declaring "S S S" is ONE duplication
+ * problem, not two).
+ *
+ * @param {string[]} list Declared symbol names, in declaration order.
+ * @returns {string[]} the duplicated values, first-seen order.
+ */
 function findDuplicates(list) {
   const seen = new Set();
   const duplicates = new Set();

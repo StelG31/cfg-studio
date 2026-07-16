@@ -44,14 +44,32 @@ export const state = {
  *  - 'grammar-loaded'   a different grammar replaced the working one
  *  - 'cnf-computed'     state.cnf holds a fresh conversion
  *  - 'cyk-computed'     state.cyk holds a fresh simulation
+ *  - 'section-shown'    a section became visible ({detail: {name}}) —
+ *                       views use it to refresh lazily / refit layouts
  */
 export const events = new EventTarget();
 
+/**
+ * Publish an application event on the shared bus.
+ *
+ * @param {string} name   One of the event names documented above.
+ * @param {*} [detail]    Optional payload, delivered as event.detail.
+ */
 export function emit(name, detail = undefined) {
   events.dispatchEvent(new CustomEvent(name, { detail }));
 }
 
-/** Replace the working grammar (load/import/new). Resets stale results. */
+/**
+ * Replace the working grammar (load / import / new).
+ *
+ * Clearing state.cnf and state.cyk here (and in markGrammarEdited) is the
+ * INVALIDATION INVARIANT the whole pipeline relies on: downstream views may
+ * trust a non-null state.cnf/state.cyk precisely because any change to the
+ * grammar destroys them.
+ *
+ * @param {object} grammar The new working grammar.
+ * @param {{id?: string|null}} [options] Server document id, if loaded from storage.
+ */
 export function setGrammar(grammar, { id = null } = {}) {
   state.grammar = grammar;
   state.grammarId = id;
@@ -72,14 +90,24 @@ export function markGrammarEdited() {
   updateGrammarIndicator();
 }
 
-/** Signal that the working grammar was persisted server-side. */
+/**
+ * Signal that the working grammar was persisted server-side.
+ *
+ * @param {string|null} id The stored document's id (null clears the link).
+ */
 export function markGrammarSaved(id) {
   state.grammarId = id;
   state.dirty = false;
   updateGrammarIndicator();
 }
 
-/** Set the unsaved flag explicitly (used when restoring a clean draft). */
+/**
+ * Set the unsaved flag explicitly (used when restoring a clean draft:
+ * the restore path re-runs the edit pipeline, which marks dirty, and then
+ * corrects the flag to what the draft actually recorded).
+ *
+ * @param {boolean} value
+ */
 export function setDirty(value) {
   state.dirty = Boolean(value);
   updateGrammarIndicator();
@@ -151,6 +179,14 @@ async function init() {
 
   // View modules register themselves here as they are implemented.
   // Each exports an init() that renders into its #<name>-root container.
+  //
+  // ORDER COUPLING, documented on purpose: the editor initialises FIRST and
+  // may emit events during its init (draft restore) before the other views
+  // have subscribed. That is safe only because every view also renders
+  // itself unconditionally inside its own init() — a view added here must
+  // follow the same rule rather than rely on catching the editor's events.
+  // (Dynamic import also breaks the static import cycle: views import
+  // app.js at module load; app.js loads views only at runtime.)
   const editorView = await import('./views/editor-view.js');
   editorView.init();
   const grammarsView = await import('./views/grammars-view.js');

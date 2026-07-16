@@ -32,6 +32,9 @@ export function init() {
 
   // Any grammar edit invalidates a previous conversion (app.js already
   // cleared state.cnf) — reflect that in the DOM the next time we render.
+  // Deliberate trade-off: this re-renders on EVERY editor keystroke, even
+  // while this section is hidden. The work is trivial at classroom scale,
+  // and rendering eagerly means the panel can never be stale when shown.
   events.addEventListener('grammar-changed', renderAll);
   events.addEventListener('grammar-loaded', renderAll);
   events.addEventListener('section-shown', (event) => {
@@ -45,6 +48,12 @@ export function init() {
 /* Actions                                                                   */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * Run the conversion on the working grammar (client-side — instant, no
+ * round-trip), publish state.cnf + 'cnf-computed' for the CYK view, and
+ * render the full trace. Invalid grammars are refused with a toast BEFORE
+ * calling the converter, so its internal throw stays a never-hit safety net.
+ */
 function convert() {
   const grammar = state.grammar;
   const { valid, errors } = validateGrammar(grammar);
@@ -84,6 +93,12 @@ function renderAll() {
   renderResults();
 }
 
+/**
+ * The "Source grammar" card: empty-state hint, or the grammar display plus
+ * a warning (and a disabled Convert button) when validation fails —
+ * the button's disabled state and the warning always agree because both
+ * derive from the same validateGrammar call.
+ */
 function renderSource() {
   const grammar = state.grammar;
   if (!grammar || grammar.productions.length === 0) {
@@ -110,7 +125,17 @@ function renderSource() {
     }`;
 }
 
-/** One change entry (add / remove / replace) inside a step card. */
+/**
+ * One change entry (add / remove / replace) inside a step card.
+ *
+ * `grammar` is the POST-stage snapshot on purpose: a variable introduced
+ * by this very stage (e.g. T_a) must already colour as a variable in the
+ * change line that introduces it.
+ *
+ * @param {object} change  A typed change entry from core/cnf.js.
+ * @param {object} grammar The step's grammar snapshot (for colouring).
+ * @returns {string} HTML list item.
+ */
 function changeHtml(change, grammar) {
   if (change.type === 'add') {
     return `
@@ -180,6 +205,11 @@ function stepHtml(step, index) {
     </div>`;
 }
 
+/**
+ * The results area: nothing (no conversion yet), an "already CNF" notice,
+ * or the six-step accordion plus the final-CNF card. The "Use in CYK"
+ * button is disabled when L(G) = ∅ — there is nothing for CYK to accept.
+ */
 function renderResults() {
   const conversion = state.cnf;
   if (!conversion) {

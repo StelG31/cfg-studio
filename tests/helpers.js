@@ -25,6 +25,14 @@ export function languageUpTo(grammar, maxLen, cap = 200000) {
 
   while (queue.length > 0 && visited.size < cap) {
     const form = queue.shift();
+    // ⚠ MAINTENANCE WARNING: the join argument on the next line is a LITERAL
+    // (invisible) U+001F unit-separator character, not an empty string. It
+    // must stay a separator: without it, forms like ["AB"] and ["A","B"]
+    // would collide into the key "AB" and the enumerator would silently
+    // drop sentential forms. If you touch this line, use the visible
+    // escape '\u001f' instead (as core/grammar.js and core/cyk.js do).
+    // The join('') further below (building the RESULT string) is a genuine
+    // empty join and is correct as written — the two are NOT the same.
     const key = form.join('');
     if (visited.has(key)) continue;
     visited.add(key);

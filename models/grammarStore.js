@@ -30,6 +30,14 @@ import crypto from 'node:crypto';
 /** UUIDs (and nothing else) are acceptable document ids. */
 const ID_PATTERN = /^[a-f0-9-]{36}$/i;
 
+/**
+ * Shape-check an id BEFORE it is ever joined into a filesystem path — the
+ * pattern admits only hex digits and dashes, so traversal fragments like
+ * "../" can never reach path.join below.
+ *
+ * @param {*} id Candidate id.
+ * @returns {boolean}
+ */
 export function isValidId(id) {
   return typeof id === 'string' && ID_PATTERN.test(id);
 }
@@ -46,7 +54,15 @@ async function ensureDir() {
   await fs.mkdir(dataDir(), { recursive: true });
 }
 
-/** Write JSON atomically: temp file + rename (rename replaces on POSIX and Windows). */
+/**
+ * Write JSON atomically: temp file + rename (rename replaces the target on
+ * both POSIX and Windows). Because the target file is switched in a single
+ * filesystem operation, a crash mid-write can only ever leave a stray .tmp
+ * file behind — never a half-written grammar.
+ *
+ * @param {string} filePath Final destination path.
+ * @param {object} data     JSON-serializable document.
+ */
 async function writeAtomic(filePath, data) {
   const tmpPath = `${filePath}.tmp`;
   await fs.writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf8');
@@ -101,7 +117,13 @@ export async function get(id) {
   }
 }
 
-/** Persist a new grammar; returns the stored document (with id + timestamps). */
+/**
+ * Persist a new grammar.
+ *
+ * @param {object} grammar A normalized grammar (the service validated it).
+ * @returns {Promise<object>} the stored document — the grammar plus
+ *          { id: randomUUID, createdAt, updatedAt } (ISO timestamps).
+ */
 export async function create(grammar) {
   await ensureDir();
   const now = new Date().toISOString();

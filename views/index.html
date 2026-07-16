@@ -267,6 +267,9 @@
             <div class="card d-none" id="cykSimCard">
               <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
                 <span><i class="bi bi-grid-3x3 me-2" aria-hidden="true"></i>Simulation</span>
+                <!-- Playback chrome: the buttons only delegate to the StepPlayer
+                     (animations.js); cyk-view.js wires them and swaps the
+                     play/pause icon from the player's progress callback. -->
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                   <div class="btn-group btn-group-sm" role="group" aria-label="Playback controls">
                     <button type="button" class="btn btn-outline-secondary" id="btnCykReset"

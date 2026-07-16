@@ -81,6 +81,14 @@ export function init() {
  *   1. the result of the last CNF conversion (state.cnf),
  *   2. the working grammar itself, if it happens to be valid CNF already.
  * Anything else → null (the panel offers an inline conversion).
+ *
+ * IMPORTANT cross-module invariant: state.cnf.result is trusted here
+ * WITHOUT re-validation. That is sound only because app.js clears
+ * state.cnf on every grammar edit (see setGrammar/markGrammarEdited) —
+ * a stale conversion can never survive a change to its source grammar.
+ * Any new code path that mutates the working grammar must preserve this.
+ *
+ * @returns {object|null} a CNF grammar ready for runCyk, or null.
  */
 function resolveCnfGrammar() {
   if (state.cnf && !state.cnf.emptyLanguage) return state.cnf.result;
@@ -158,6 +166,12 @@ function renderGrammarPanel() {
 /* Running the simulation                                                    */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * Execute a simulation: run the ALGORITHM instantly (core/cyk.js), then
+ * hand its recorded step trace to a fresh StepPlayer for replay. The
+ * animation is therefore a faithful replay of what the algorithm did,
+ * never a re-implementation of it.
+ */
 function run() {
   const grammar = resolveCnfGrammar();
   if (!grammar) {
@@ -165,6 +179,8 @@ function run() {
     return;
   }
 
+  // Trimmed on purpose: stray spaces are the most common paste accident,
+  // and whitespace can never be a terminal anyway (isValidTerminalSymbol).
   const input = els.input.value.trim();
 
   let result;
@@ -192,11 +208,13 @@ function run() {
   player.play();
 }
 
+/** Stop and drop the current player (its timers must not outlive a run). */
 function teardownPlayerOnly() {
   player?.destroy();
   player = null;
 }
 
+/** Full reset: player, table DOM, verdict, caption — used on grammar edits. */
 function teardownSimulation() {
   teardownPlayerOnly();
   els.simCard.classList.add('d-none');
@@ -254,7 +272,21 @@ function resetView(result) {
     </table>`;
 }
 
-/** Append newly derived variables to a cell's mirror + DOM. */
+/**
+ * Append newly derived variables to a cell's mirror + DOM.
+ *
+ * `cellContents` (Map "i:l" → string[]) mirrors what each cell currently
+ * shows. It exists because the StepPlayer replays steps incrementally and
+ * out of visual order during seeks — the DOM alone can't be trusted as
+ * state, but the mirror can be rebuilt deterministically from any prefix
+ * of the trace.
+ *
+ * @param {number} i         Cell start position (0-based).
+ * @param {number} l         Cell substring length.
+ * @param {string[]} variables Variables to merge in (duplicates ignored).
+ * @param {object} grammar   For symbol colouring.
+ * @param {boolean} flash    Animate only when new content actually appeared.
+ */
 function addToCell(i, l, variables, grammar, flash) {
   const key = `${i}:${l}`;
   const existing = cellContents.get(key) ?? [];
@@ -274,6 +306,7 @@ function addToCell(i, l, variables, grammar, flash) {
   }
 }
 
+/** Remove all step-transient highlight classes (cells + grammar rules). */
 function clearHighlights() {
   for (const el of els.tableWrap.querySelectorAll('.cell-active, .cell-src')) {
     el.classList.remove('cell-active', 'cell-src');
@@ -283,6 +316,13 @@ function clearHighlights() {
   }
 }
 
+/**
+ * Flash the given productions in the grammar panel. Rules are located by
+ * their productionKey stored in data-rule-key at render time; CSS.escape
+ * guards the attribute selector against symbols like '(' or '"'.
+ *
+ * @param {object[]} productions Productions used by the current step.
+ */
 function highlightRules(productions) {
   for (const production of productions) {
     const el = els.grammar.querySelector(
@@ -337,6 +377,12 @@ function applyStep(step, { animate }) {
   }
 }
 
+/**
+ * The Accepted/Rejected banner; accepted runs get the "Show parse tree"
+ * button that hands over to the tree section (which reads state.cyk).
+ *
+ * @param {object} step The trace's 'verdict' step ({accepted, explanation}).
+ */
 function renderVerdict(step) {
   const { input } = state.cyk;
   const shownInput = input === '' ? EPSILON : input;
@@ -359,6 +405,14 @@ function renderVerdict(step) {
 /* Playback chrome                                                           */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * Base display duration per step type (ms) — 'combine' steps get the most
+ * time because they carry the actual reasoning; the StepPlayer divides
+ * these by the user's speed multiplier.
+ *
+ * @param {object} step A trace step.
+ * @returns {number} milliseconds to linger.
+ */
 function stepDelay(step) {
   switch (step.type) {
     case 'begin':
@@ -376,6 +430,12 @@ function stepDelay(step) {
   }
 }
 
+/**
+ * StepPlayer progress callback: step counter text and the play/pause icon
+ * (the same button toggles both ways, so its icon mirrors player state).
+ *
+ * @param {StepPlayer} p The player reporting progress.
+ */
 function renderProgress(p) {
   els.progress.textContent = `Step ${p.position} / ${p.length}`;
   els.playButton.innerHTML = p.playing

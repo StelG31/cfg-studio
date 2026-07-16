@@ -80,6 +80,23 @@ export function isValidTerminalSymbol(symbol) {
  * empty entries dropped, but NOTHING is deduplicated or rejected here —
  * reporting duplicate/undefined/invalid symbols with helpful messages is
  * the validator's single responsibility.
+ *
+ * This is the CANONICAL definition site of the grammar object used across
+ * the entire project (editor state, REST payloads, stored documents,
+ * algorithm inputs):
+ *
+ *   { name:        string,      // display name
+ *     description: string,      // optional free text
+ *     variables:   string[],    // V  — non-terminals, declaration order
+ *     terminals:   string[],    // Σ  — single-character terminals
+ *     startSymbol: string,      // S  — must be one of `variables` (validator checks)
+ *     productions: [ { left: string, right: string[] } ] }
+ *                                // P — right = [] means ε; symbols are stored
+ *                                // pre-tokenized, so no algorithm ever
+ *                                // re-parses text
+ *
+ * @param {object} [parts] Raw fields in the shape above (all optional).
+ * @returns {object} a fresh, normalized grammar object.
  */
 export function createGrammar({
   name = 'Untitled grammar',
@@ -107,7 +124,13 @@ export function createEmptyGrammar(name = 'Untitled grammar') {
   return createGrammar({ name });
 }
 
-/** Deep copy (grammars are plain JSON data, so this is safe and simple). */
+/**
+ * Deep copy (grammars are plain JSON data — no functions, Dates or cycles —
+ * so JSON round-tripping is safe and simple).
+ *
+ * @param {object} grammar Any grammar object.
+ * @returns {object} an independent structural copy.
+ */
 export function cloneGrammar(grammar) {
   return JSON.parse(JSON.stringify(grammar));
 }
@@ -257,7 +280,13 @@ export function parseProductionLine(line, { variables = [], terminals = [] } = {
 /* Formatting grammars back into text                                        */
 /* ------------------------------------------------------------------------ */
 
-/** "S → ( S )"; ε-productions render as "S → ε". */
+/**
+ * Render one production as text: "S → ( S )"; ε-productions render as "S → ε".
+ *
+ * @param {{left: string, right: string[]}} production
+ * @param {string} [arrow] Arrow glyph (the ASCII "->" is used in tests).
+ * @returns {string}
+ */
 export function productionToString(production, arrow = '→') {
   const rhs = production.right.length === 0 ? EPSILON : production.right.join(' ');
   return `${production.left} ${arrow} ${rhs}`;
@@ -268,6 +297,10 @@ export function productionToString(production, arrow = '→') {
  * variable on one line (in order of first appearance):
  *
  *     S → ( S ) | S S | ε
+ *
+ * @param {object} grammar The grammar to format.
+ * @param {{arrow?: string, separator?: string}} [options]
+ * @returns {string} one line per variable, newline-separated.
  */
 export function grammarToText(grammar, { arrow = '→', separator = ' | ' } = {}) {
   const byLeft = new Map();
@@ -289,7 +322,14 @@ export function grammarToText(grammar, { arrow = '→', separator = ' | ' } = {}
 export const GRAMMAR_FORMAT = 'cfg-studio-grammar';
 export const GRAMMAR_FORMAT_VERSION = 1;
 
-/** Wrap a grammar in a small envelope that identifies the file format. */
+/**
+ * Wrap a grammar in a small envelope that identifies the file format —
+ * this is exactly what the Export button downloads and what Import expects
+ * (import also accepts bare grammar objects, see deserializeGrammar).
+ *
+ * @param {object} grammar The grammar to export.
+ * @returns {string} pretty-printed JSON: {format, version, grammar}.
+ */
 export function serializeGrammar(grammar) {
   return JSON.stringify(
     { format: GRAMMAR_FORMAT, version: GRAMMAR_FORMAT_VERSION, grammar },

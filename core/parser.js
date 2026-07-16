@@ -28,6 +28,14 @@ import { EPSILON } from './grammar.js';
  *   terminal leaf : { symbol, span: {i, l:1}, terminal: true }
  *   ε leaf        : { symbol: 'ε', terminal: true, epsilon: true }
  *
+ * Preconditions/assumptions:
+ *   - `cykResult` must come from runCyk() unmodified: the walk trusts the
+ *     table's backpointers completely (an accepted run guarantees every
+ *     visited entry exists; a missing one throws rather than mis-building).
+ *   - For ambiguous strings, `derivations[0]` is taken at every entry —
+ *     deterministic by construction (CYK records splits smallest-k-first,
+ *     grammar order second), so the same input always yields the same tree.
+ *
  * @param {object} cykResult The object returned by runCyk().
  * @returns {object|null} the root node, or null when the input was rejected.
  */
@@ -118,17 +126,38 @@ export function leftmostDerivation(tree) {
 /* Small tree metrics (view footer + tests)                                  */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * Total node count. For a CNF derivation of a length-n string this is
+ * always exactly 3n − 1 (n terminal leaves + n pre-terminal nodes + n−1
+ * binary nodes) — a law the tests assert.
+ *
+ * @param {object|null} tree
+ * @returns {number}
+ */
 export function countNodes(tree) {
   if (!tree) return 0;
   return 1 + (tree.children ?? []).reduce((sum, child) => sum + countNodes(child), 0);
 }
 
+/**
+ * Depth in NODES (a single leaf counts as depth 1).
+ *
+ * @param {object|null} tree
+ * @returns {number}
+ */
 export function treeDepth(tree) {
   if (!tree || !tree.children || tree.children.length === 0) return 1;
   return 1 + Math.max(...tree.children.map(treeDepth));
 }
 
-/** The leaves' symbols left-to-right (must spell the input string). */
+/**
+ * The leaves' symbols left-to-right — the tree's "yield". Must spell the
+ * input string exactly (ε leaves contribute nothing); the tests use this
+ * as the primary structural correctness check.
+ *
+ * @param {object|null} tree
+ * @returns {string[]}
+ */
 export function frontier(tree) {
   if (!tree) return [];
   if (tree.terminal) return tree.epsilon ? [] : [tree.symbol];

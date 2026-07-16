@@ -27,6 +27,17 @@ import { validateGrammar, computeGenerating, computeReachable } from './validato
 /* Change-entry helpers (what the UI renders per step)                       */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * Every stage reports its work as a list of typed CHANGE ENTRIES. This is
+ * the data structure the CNF view renders (green +, red −, before ⇒ after):
+ *
+ *   { type: 'add',     production: {left, right}, reason: string }
+ *   { type: 'remove',  production: {left, right}, reason: string }
+ *   { type: 'replace', before: {left, right}, after: {left, right}, reason }
+ *
+ * `reason` is a complete, student-facing sentence explaining WHY the rule
+ * was added/removed — the explanations in the UI come straight from here.
+ */
 const added = (production, reason) => ({ type: 'add', production, reason });
 const removed = (production, reason) => ({ type: 'remove', production, reason });
 const replaced = (before, after, reason) => ({ type: 'replace', before, after, reason });
@@ -112,6 +123,20 @@ export function isCnf(grammar) {
 /* Stage 1 — START: fresh start symbol                                       */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * STAGE 1 (START): introduce a fresh start symbol S0 → S if — and only if —
+ * the current start symbol appears on some right-hand side.
+ *
+ * Why: CNF permits a single ε-rule, S → ε, but only when the start symbol
+ * never occurs on a right-hand side; otherwise a derivation could duplicate
+ * the start symbol mid-string and "erase" parts of it through ε. Adding S0
+ * up front makes the later DEL stage's `S0 → ε` unconditionally safe.
+ * When the start symbol is already absent from every RHS, the stage is a
+ * documented no-op (the returned explanation says why nothing changed).
+ *
+ * @param {object} grammar A valid grammar (not mutated — a clone is edited).
+ * @returns {{grammar: object, changes: object[], explanation: string}}
+ */
 export function applyStart(grammar) {
   const result = cloneGrammar(grammar);
   const changes = [];
@@ -156,6 +181,19 @@ export function applyStart(grammar) {
 /* Stage 2 — TERM: isolate terminals in long right-hand sides                */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * STAGE 2 (TERM): in every right-hand side of length ≥ 2, replace each
+ * terminal `a` by a fresh variable T_a and add the rule T_a → a.
+ *
+ * Why: CNF only allows terminals in rules of the exact shape A → a. Rules
+ * of length 1 are already that shape, so they are left untouched — only
+ * "mixed" rules like S → a S b violate the form. One replacement variable
+ * is created PER TERMINAL and reused across all rules (the `replacementFor`
+ * map), so the grammar grows by at most |Σ| extra variables.
+ *
+ * @param {object} grammar A valid grammar (not mutated — a clone is edited).
+ * @returns {{grammar: object, changes: object[], explanation: string}}
+ */
 export function applyTerm(grammar) {
   const result = cloneGrammar(grammar);
   const changes = [];
@@ -214,6 +252,24 @@ export function applyTerm(grammar) {
 /* Stage 3 — BIN: binarize long right-hand sides                             */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * STAGE 3 (BIN): replace every rule A → X1 X2 … Xk with k ≥ 3 by a cascade
+ * of binary rules threaded through fresh variables:
+ *
+ *     A → X1 N1,  N1 → X2 N2,  …,  N(k−2) → X(k−1) Xk
+ *
+ * Why here in the pipeline: running BIN BEFORE DEL is the complexity
+ * argument of the whole conversion. DEL must enumerate every subset of
+ * nullable symbols in a right-hand side (2^k variants); after BIN, k ≤ 2,
+ * so that enumeration is bounded by 4 variants per rule instead of being
+ * exponential in the longest right-hand side.
+ *
+ * Fresh cascade variables are NOT shared between rules — sharing would
+ * accidentally merge derivations of unrelated rules.
+ *
+ * @param {object} grammar A valid grammar, ideally after TERM (not mutated).
+ * @returns {{grammar: object, changes: object[], explanation: string}}
+ */
 export function applyBin(grammar) {
   const result = cloneGrammar(grammar);
   const changes = [];
@@ -271,7 +327,21 @@ export function applyBin(grammar) {
 /* Stage 4 — DEL: eliminate ε-productions                                    */
 /* ------------------------------------------------------------------------ */
 
-/** The nullable set: variables that can derive ε (fixpoint computation). */
+/**
+ * The NULLABLE set: every variable A with A ⇒* ε.
+ *
+ * Bottom-up fixpoint: A is nullable iff some rule A → α exists where every
+ * symbol of α is a nullable variable. ε-rules (right = []) are the base
+ * case — `every` over an empty array is vacuously true.
+ *
+ * Termination/invariant: `nullable` only ever GROWS and is bounded by |V|,
+ * so the outer while-loop runs at most |V| + 1 passes; a pass that adds
+ * nothing proves the set is complete (a fixpoint has been reached).
+ *
+ * @param {object} grammar Any grammar (terminals in α disqualify a rule
+ *                         automatically, since only variables can be nullable).
+ * @returns {Set<string>} the nullable variables.
+ */
 export function computeNullable(grammar) {
   const variables = new Set(grammar.variables);
   const nullable = new Set();
@@ -293,6 +363,23 @@ export function computeNullable(grammar) {
   return nullable;
 }
 
+/**
+ * STAGE 4 (DEL): eliminate ε-productions.
+ *
+ * For every rule, every SUBSET of its nullable-symbol occurrences may be
+ * omitted (each omitted occurrence stands for "that variable derived ε"),
+ * producing new variant rules; then all ε-productions are dropped. If the
+ * start symbol itself was nullable, exactly one ε-rule is re-added for it —
+ * the single ε-production CNF permits (safe because START guaranteed the
+ * start symbol is on no right-hand side).
+ *
+ * Precondition (for the complexity bound, not for correctness): TERM and
+ * BIN have run, so every right-hand side has ≤ 2 symbols and the subset
+ * enumeration below is capped at 4 variants per rule.
+ *
+ * @param {object} grammar A valid grammar after TERM+BIN (not mutated).
+ * @returns {{grammar: object, changes: object[], explanation: string}}
+ */
 export function applyDel(grammar) {
   const result = cloneGrammar(grammar);
   const changes = [];
@@ -301,6 +388,10 @@ export function applyDel(grammar) {
   const keptKeys = new Set();
   const kept = [];
 
+  // Deduplicating collector: two different subset-omissions can produce the
+  // SAME variant (e.g. S → A A with nullable A yields "S → A" twice — once
+  // per omitted position). productionKey makes the second copy a no-op, so
+  // the classic duplicate-variant bug cannot occur.
   const keep = (production, reason) => {
     const key = productionKey(production);
     if (keptKeys.has(key)) return;
@@ -326,6 +417,9 @@ export function applyDel(grammar) {
       .map((symbol, index) => (nullable.has(symbol) ? index : -1))
       .filter((index) => index !== -1);
 
+    // Bitmask enumeration of the non-empty subsets of nullable positions:
+    // bit b of `mask` set ⇔ omit positions[b]. `mask` starts at 1 because
+    // the ∅ subset (omit nothing) is the original rule, already kept above.
     for (let mask = 1; mask < 1 << positions.length; mask += 1) {
       const omit = new Set(positions.filter((_, bit) => mask & (1 << bit)));
       const right = production.right.filter((_, index) => !omit.has(index));
@@ -373,6 +467,27 @@ export function applyDel(grammar) {
 /* Stage 5 — UNIT: eliminate unit productions                                */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * STAGE 5 (UNIT): eliminate unit productions (rules A → B with B a variable).
+ *
+ * Method: compute the UNIT-PAIR CLOSURE — for every A, the set of variables
+ * B with A ⇒* B using only unit rules — then let A adopt every NON-unit rule
+ * of every B it reaches, and delete all unit rules. Computing reachability
+ * first (instead of repeatedly rewriting A → B → C …) is what makes unit
+ * CYCLES (A → B, B → A) terminate trivially: a closure is a set, and sets
+ * don't loop.
+ *
+ * Why this stage runs LAST: DEL creates new unit rules (A → B C with C
+ * nullable leaves the variant A → B), so eliminating units any earlier
+ * would have to be redone.
+ *
+ * Note: the adopted rules are already CNF-shaped (length-2 variable pairs,
+ * length-1 terminals, or the start's ε-rule) because TERM/BIN/DEL ran first —
+ * UNIT cannot reintroduce any earlier stage's violation.
+ *
+ * @param {object} grammar A valid grammar after DEL (not mutated).
+ * @returns {{grammar: object, changes: object[], explanation: string}}
+ */
 export function applyUnit(grammar) {
   const result = cloneGrammar(grammar);
   const changes = [];
@@ -453,6 +568,25 @@ export function applyUnit(grammar) {
 /* Stage 6 — CLEANUP: remove useless symbols                                 */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * STAGE 6 (CLEANUP): remove useless symbols, reusing the validator's two
+ * fixpoint analyses (single source of truth for both diagnosis and repair).
+ *
+ * Pass order is essential and classic (Hopcroft & Ullman):
+ *   1. drop NON-GENERATING variables first (they can never finish a
+ *      derivation, so every rule touching them is dead), THEN
+ *   2. drop UNREACHABLE variables — because removing dead-end rules in
+ *      pass 1 can disconnect further variables from the start symbol.
+ * Running the passes in the opposite order can leave useless symbols behind.
+ *
+ * The start symbol is always kept (a grammar needs one even when L(G) = ∅),
+ * and the terminal alphabet Σ is deliberately left unchanged: Σ is part of
+ * the language's definition, and pruning it would turn honest "rejected"
+ * CYK answers into misleading "not in alphabet" errors.
+ *
+ * @param {object} grammar A valid grammar (not mutated — a clone is edited).
+ * @returns {{grammar: object, changes: object[], explanation: string}}
+ */
 export function removeUseless(grammar) {
   const result = cloneGrammar(grammar);
   const changes = [];
@@ -516,6 +650,12 @@ export function removeUseless(grammar) {
 /* The full pipeline                                                         */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * The pipeline as data: each entry is {key, title, apply} where `apply` is
+ * one of the pure stage functions above. convertToCnf folds the grammar
+ * through this list in order — the array IS the algorithm's structure, and
+ * its order encodes the correctness/complexity argument documented per stage.
+ */
 const STAGES = [
   { key: 'START', title: 'START — new start symbol', apply: applyStart },
   { key: 'TERM', title: 'TERM — isolate terminals', apply: applyTerm },
@@ -528,6 +668,16 @@ const STAGES = [
 /**
  * Convert a VALID grammar to Chomsky Normal Form.
  *
+ * Behaviour notes:
+ *  - A grammar that is already CNF short-circuits into a single explanatory
+ *    "DONE" step (running the pipeline anyway would add-and-remove a
+ *    pointless S0 and confuse the step display).
+ *  - Each step records a DEEP SNAPSHOT of the grammar after its stage, so
+ *    the UI can show every intermediate grammar without recomputation.
+ *  - `emptyLanguage` is decided AFTER cleanup: if the start symbol ends up
+ *    with no productions, every rule was a dead end and L(G) = ∅.
+ *
+ * @param {object} grammar The source grammar (never mutated).
  * @throws {Error} if the grammar does not pass the shared validator —
  *                 callers (editor, API service) validate first and show
  *                 the findings; this guard is a safety net, not a UI path.

@@ -61,6 +61,16 @@ export function init() {
 /* Rendering                                                                 */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * Show a placeholder message instead of a tree and hide the derivation card.
+ *
+ * ESCAPING DISCIPLINE: `message` is interpolated as HTML on purpose (the
+ * callers embed <strong>/<em> emphasis) — so every DYNAMIC value inside a
+ * message passed here MUST already be escapeHtml()'d by the caller. Both
+ * current call sites do this; keep it that way when adding messages.
+ *
+ * @param {string} message Trusted HTML fragment (see note above).
+ */
 function emptyState(message) {
   currentTree = null;
   els.canvas.innerHTML = `<p class="text-secondary mb-0 p-4">${message}</p>`;
@@ -69,6 +79,11 @@ function emptyState(message) {
   els.derivationCard.classList.add('d-none');
 }
 
+/**
+ * Three-state render: no CYK run yet / run rejected (no tree exists by
+ * definition) / accepted — build the tree from the run's backpointers,
+ * draw it, and show the metadata footer + leftmost derivation.
+ */
 function render() {
   const run = state.cyk;
 

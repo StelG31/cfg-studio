@@ -68,6 +68,7 @@ export class StepPlayer {
     this.timer = setTimeout(() => this.#tick(), this.stepDelay(step) / this.speed);
   }
 
+  /** Start (or resume) playback; a finished trace restarts from step 0. */
   play() {
     if (this.playing) return;
     if (this.done) this.seek(0); // replay from the start
@@ -76,27 +77,38 @@ export class StepPlayer {
     this.#tick();
   }
 
+  /** Stop the timer chain; the current position is retained. */
   pause() {
     this.playing = false;
     this.#clearTimer();
     this.onProgress(this);
   }
 
+  /** Play ⇄ pause, for a single toolbar button. */
   toggle() {
     this.playing ? this.pause() : this.play();
   }
 
+  /** Pause and advance exactly one step (with animation). */
   stepForward() {
     this.pause();
     this.#applyNext(true);
   }
 
+  /** Pause and go one step back — implemented as seek(position − 1),
+   *  i.e. reset + silent fast-forward; see the class header for why. */
   stepBack() {
     this.pause();
     this.seek(this.position - 1);
   }
 
-  /** Jump to "k steps applied" by resetting and fast-forwarding. */
+  /**
+   * Jump to "k steps applied" by resetting and fast-forwarding.
+   * All replayed steps run with {animate: false}, so highlight/flash
+   * effects are skipped and only the accumulated state is rebuilt.
+   *
+   * @param {number} k Target position, clamped into [0, steps.length].
+   */
   seek(k) {
     this.#clearTimer();
     const target = Math.max(0, Math.min(k, this.steps.length));
@@ -106,11 +118,19 @@ export class StepPlayer {
     this.onProgress(this);
   }
 
+  /** Jump straight to the final state (verdict visible immediately). */
   skipToEnd() {
     this.pause();
     this.seek(this.steps.length);
   }
 
+  /**
+   * Playback speed multiplier (1 = the caller's stepDelay verbatim).
+   * Takes effect from the NEXT scheduled step — the currently pending
+   * timeout keeps the delay it was scheduled with.
+   *
+   * @param {number} speed e.g. 0.5, 1, 2, 4.
+   */
   setSpeed(speed) {
     this.speed = speed;
   }

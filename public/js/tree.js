@@ -37,7 +37,19 @@ const STYLE = {
 
 /**
  * Assign x/y positions. Returns flat lists the renderer consumes.
- * @returns {{nodes: {node,x,y}[], edges: {x1,y1,x2,y2}[], width, height}}
+ *
+ * Invariants the post-order pass maintains:
+ *  - every LEAF gets the next free slot (leaves end up evenly spaced in
+ *    left-to-right input order — the tree's frontier IS the input string),
+ *  - every INTERNAL node is centred between its first and last child, so
+ *    edges never cross for an ordered tree,
+ *  - y is simply depth × LEVEL_HEIGHT.
+ * This is the classic simplification of Reingold–Tilford that is exact for
+ * trees whose leaves are ordered — which CNF derivation trees always are.
+ *
+ * @param {object} root A parse-tree node from core/parser.js.
+ * @returns {{nodes: {node,x,y}[], edges: {x1,y1,x2,y2}[],
+ *            minX: number, width: number, height: number}}
  */
 function layoutTree(root) {
   const placed = [];
@@ -92,7 +104,17 @@ export class TreeRenderer {
     this.contentBox = null; // {x, y, w, h} of the drawn tree
   }
 
-  /** Draw `tree` (a core/parser.js node) from scratch. */
+  /**
+   * Draw `tree` (a core/parser.js node) from scratch.
+   *
+   * Note on listener lifetime: interaction handlers are attached to the
+   * SVG inside this method, and this method REPLACES the whole SVG
+   * (container.innerHTML = ''), so no duplicate listeners can accumulate
+   * across renders. If render() is ever optimised to reuse the SVG,
+   * #wireInteraction must become idempotent first.
+   *
+   * @param {object} tree Parse-tree root node.
+   */
   render(tree) {
     this.container.innerHTML = '';
 
@@ -200,7 +222,14 @@ export class TreeRenderer {
     };
   }
 
-  /** Zoom by `factor` keeping `pivot` (SVG coords) fixed on screen. */
+  /**
+   * Zoom by `factor` keeping `pivot` (SVG coords) fixed on screen.
+   *
+   * The math: shrinking the viewBox by `factor` magnifies the content; to
+   * keep the pivot stationary, its RELATIVE offset inside the viewBox
+   * (pivot − origin) must shrink by the same factor — hence the new origin
+   * pivot − (pivot − origin)/factor on both axes.
+   */
   #zoomAround(pivot, factor) {
     const viewBox = this.#getViewBox();
     const w = viewBox.w / factor;

@@ -59,6 +59,7 @@ function loadIntoEditor(grammar, { id = null, sourceLabel }) {
 /* Saved grammars                                                            */
 /* ------------------------------------------------------------------------ */
 
+/** Re-fetch the saved list from the server and repaint it (or an error). */
 async function refreshSaved() {
   try {
     const list = await api.listGrammars();
@@ -68,6 +69,13 @@ async function refreshSaved() {
   }
 }
 
+/**
+ * Paint the saved-grammar list. Action buttons carry data-action/data-id
+ * attributes and share one handler (onSavedAction) — the list is rebuilt
+ * wholesale on every refresh, so listeners never accumulate.
+ *
+ * @param {object[]} list Metadata entries from GET /api/grammars.
+ */
 function renderSaved(list) {
   if (list.length === 0) {
     els.savedList.innerHTML = `
@@ -115,6 +123,15 @@ function renderSaved(list) {
   });
 }
 
+/**
+ * Dispatch a saved-list button click: load (into the editor, replacing the
+ * draft), export (fetch full doc → serialize → download), or delete
+ * (confirmation dialog first — every destructive action in the app asks).
+ * Deleting the grammar currently open in the editor also clears
+ * state.grammarId, since the server document no longer exists.
+ *
+ * @param {HTMLButtonElement} button The clicked action button.
+ */
 async function onSavedAction(button) {
   const { action, id, name } = button.dataset;
 
@@ -168,6 +185,11 @@ async function onSavedAction(button) {
 /* Sample grammars                                                           */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * Paint the sample gallery: name, description, a rendered preview of the
+ * productions, and the suggested accept/reject strings as chips — so a
+ * student can see what to try in CYK before even loading the sample.
+ */
 async function renderSamples() {
   let samples;
   try {
@@ -220,6 +242,12 @@ async function renderSamples() {
 /* Import from JSON file                                                     */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * Import a grammar from a user-selected JSON file: read → deserialize with
+ * the shared structural checker (its messages name the exact malformed
+ * field) → load into the editor. The import does NOT auto-save: the user
+ * reviews the grammar first and presses Save deliberately.
+ */
 async function onImportFile() {
   const file = els.fileInput.files?.[0];
   els.fileInput.value = ''; // allow re-selecting the same file later

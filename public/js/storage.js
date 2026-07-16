@@ -56,6 +56,15 @@ export function clearDraft() {
  * Small fetch wrapper: JSON in/out, and every non-2xx response becomes a
  * thrown Error carrying the server's message and machine-readable code —
  * so views can simply try/catch and toast err.message.
+ *
+ * The thrown Error mirrors the server's HttpError shape (err.code,
+ * err.details, err.status), making the client and server error models
+ * symmetric — one mental model on both sides of the wire.
+ *
+ * @param {string} path    API path, e.g. '/api/grammars'.
+ * @param {object} [options] fetch() options (method, body, ...).
+ * @returns {Promise<*>} parsed JSON body, or null for 204 responses.
+ * @throws {Error} with {code, details, status} on any non-2xx response.
  */
 async function apiFetch(path, options = {}) {
   const response = await fetch(path, {
@@ -112,6 +121,14 @@ export const api = {
 /**
  * Offer a grammar as a .json download. Uses the same envelope format the
  * import understands (and the same shape the server stores).
+ *
+ * Two arguments on purpose: serialization lives in core/grammar.js, and
+ * this transport module must not import grammar logic — so the CALLER
+ * serializes (serializeGrammar) and this function only needs the grammar
+ * object itself for the download filename.
+ *
+ * @param {object} grammar        The grammar (used for the file name only).
+ * @param {string} serializedText The exact JSON text to download.
  */
 export function downloadGrammarFile(grammar, serializedText) {
   const blob = new Blob([serializedText], { type: 'application/json' });
@@ -128,7 +145,12 @@ export function downloadGrammarFile(grammar, serializedText) {
   URL.revokeObjectURL(url);
 }
 
-/** Read a user-selected File and resolve with its text content. */
+/**
+ * Read a user-selected File and resolve with its text content.
+ *
+ * @param {File} file From an <input type="file"> change event.
+ * @returns {Promise<string>} the file's text (rejects on read errors).
+ */
 export function readFileText(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

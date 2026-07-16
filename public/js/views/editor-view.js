@@ -265,6 +265,7 @@ function applyDraft(draft) {
 /* Production rows (dynamic DOM)                                             */
 /* ------------------------------------------------------------------------ */
 
+/** Append a blank row, pre-selecting the first declared variable as LHS. */
 function addRow() {
   const variables = splitVariables(els.variables.value);
   rows.push({ left: variables[0] ?? '', rhsText: '', errors: [] });
@@ -272,6 +273,14 @@ function addRow() {
   rebuildGrammar();
 }
 
+/**
+ * Delete a row by index. The editor never shows zero rows — an empty
+ * placeholder row is re-inserted so "Add production" isn't the only way
+ * back after deleting everything.
+ *
+ * @param {number} index Position in `rows` (indices are re-assigned by the
+ *                       full re-render that follows, so no staleness).
+ */
 function removeRow(index) {
   rows.splice(index, 1);
   if (rows.length === 0) rows.push({ left: '', rhsText: '', errors: [] });
@@ -279,6 +288,7 @@ function removeRow(index) {
   rebuildGrammar();
 }
 
+/** Put the keyboard cursor into the RHS input of row `index`. */
 function focusRow(index) {
   els.rowsContainer.querySelectorAll('.rhs-input')[index]?.focus();
 }
@@ -381,6 +391,13 @@ function refreshSymbolSelects() {
   }
 }
 
+/**
+ * Rebuild the start-symbol dropdown from the declared variables, keeping
+ * the previous choice when it is still declared (so retyping the variable
+ * list doesn't silently drop the user's selection).
+ *
+ * @param {string[]} variables Currently declared variable names.
+ */
 function fillStartSelect(variables) {
   const previous = els.start.value;
   els.start.innerHTML = '<option value="">— choose a variable —</option>';
@@ -394,6 +411,16 @@ function fillStartSelect(variables) {
   els.start.value = variables.includes(previous) ? previous : '';
 }
 
+/**
+ * (Re)populate one row's LHS dropdown. A row may reference a variable the
+ * user has (temporarily) deleted from the declaration list — that value is
+ * kept selectable, visibly marked "(undeclared)", so no production text is
+ * ever silently lost while the user reorganises their symbols.
+ *
+ * @param {HTMLSelectElement} select The row's LHS <select>.
+ * @param {string} current           The row's current LHS value.
+ * @param {string[]} [variables]     Declared variables (parsed if omitted).
+ */
 function fillLhsSelect(select, current, variables = splitVariables(els.variables.value)) {
   select.innerHTML = '';
   const placeholder = document.createElement('option');
@@ -431,6 +458,11 @@ function chipHtml(symbol, kind, isStart = false) {
   return `<span class="${classes}">${escapeHtml(symbol)}${startMark}</span>`;
 }
 
+/**
+ * Repaint the "Grammar overview" panel: symbol chips (start symbol gets a
+ * halo), the grouped textbook-style production display (shared renderer),
+ * and the |V|/|Σ|/|P| summary line. Called on every model change.
+ */
 function renderOverview() {
   const grammar = state.grammar;
   if (!grammar) return;
@@ -582,6 +614,18 @@ function exportGrammar() {
 /* Draft autosave                                                            */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * Debounced (400 ms) draft persistence. The snapshot stores the VERBATIM
+ * form state — not the parsed grammar — so half-typed, not-yet-parseable
+ * text survives a reload too. Draft snapshot shape:
+ *
+ *   { name, description,            // metadata inputs, as typed
+ *     variablesText, terminalsText, // raw declaration inputs, as typed
+ *     startSymbol,                  // current dropdown value
+ *     rows: [{left, rhsText}],      // production lines, as typed
+ *     grammarId,                    // server id if the grammar was saved
+ *     dirty }                       // unsaved flag, restored verbatim
+ */
 function scheduleDraftSave() {
   clearTimeout(draftTimer);
   draftTimer = setTimeout(() => {

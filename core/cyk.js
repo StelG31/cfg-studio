@@ -135,6 +135,21 @@ export function runCyk(grammar, input) {
 
   /* ——— Build the empty table ————————————————————————————————— */
   // table[l][i]: substring starting at i (0-based) of length l (1-based).
+  //
+  // Cell shape (kept as plain JSON so it can travel over the REST API and
+  // be consumed by core/parser.js unchanged):
+  //
+  //   cell  = { entries: [ { variable:    string,
+  //                          derivations: [ derivation, ... ] } ] }
+  //
+  //   derivation = { type: 'terminal', production }            // base row
+  //              | { type: 'split', k, production }            // l ≥ 2:
+  //                    the substring was split after k characters; the
+  //                    production A → B C names the children implicitly:
+  //                    B lives in cell (i, k), C in cell (i+k, l−k).
+  //
+  // ALL derivations are kept (not just the first) — that is what preserves
+  // ambiguity information and gives the parse-tree builder its backpointers.
   const table = [];
   for (let l = 1; l <= n; l += 1) {
     table[l] = [];
@@ -143,7 +158,16 @@ export function runCyk(grammar, input) {
     }
   }
 
-  /** The entry for `variable` in cell (i, l), created on first use. */
+  /**
+   * The entry for `variable` in cell (i, l), created on first use — an
+   * upsert, so a variable found via several splits accumulates ALL its
+   * derivations in one entry.
+   *
+   * @param {number} i        0-based start position of the substring.
+   * @param {number} l        substring length (1-based).
+   * @param {string} variable the variable to look up / insert.
+   * @returns {{variable: string, derivations: object[]}}
+   */
   const entryFor = (i, l, variable) => {
     const cell = table[l][i];
     let entry = cell.entries.find((e) => e.variable === variable);
@@ -154,6 +178,7 @@ export function runCyk(grammar, input) {
     return entry;
   };
 
+  /** The variables currently present in cell (i, l), in insertion order. */
   const cellVariables = (i, l) => table[l][i].entries.map((e) => e.variable);
 
   steps.push({
@@ -188,6 +213,12 @@ export function runCyk(grammar, input) {
   }
 
   /* ——— Induction: lengths 2..n ————————————————————————————— */
+  // Loop invariant that makes the DP sound: `l` increases OUTERMOST, so by
+  // the time cell (i, l) is combined, every cell of length < l is already
+  // final — both children of any split (lengths k and l−k, each < l) can be
+  // trusted. In CNF a derivation of length ≥ 2 MUST start with some binary
+  // rule A → B C where B derives a prefix and C the matching suffix, which
+  // is why trying every split point k is the only case analysis needed.
   for (let l = 2; l <= n; l += 1) {
     for (let i = 0; i <= n - l; i += 1) {
       for (let k = 1; k < l; k += 1) {

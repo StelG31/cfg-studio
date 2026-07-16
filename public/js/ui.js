@@ -128,6 +128,14 @@ export function confirmDialog({
 
 let loadingCount = 0;
 
+/**
+ * Show/hide the full-screen loading overlay. Callers must pair every
+ * setLoading(true) with a setLoading(false) (typically in a finally block)
+ * — the counter, not a boolean, is what makes overlapping API calls safe.
+ *
+ * @param {boolean} on     true to increment the counter, false to decrement.
+ * @param {string} [label] Text under the spinner (last caller wins).
+ */
 export function setLoading(on, label = 'Working…') {
   loadingCount = Math.max(0, loadingCount + (on ? 1 : -1));
 

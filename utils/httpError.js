@@ -36,4 +36,14 @@ export class HttpError extends Error {
   static notFound(code, message, details) {
     return new HttpError(404, code, message, details);
   }
+
+  /**
+   * 503 — the request was fine, but the server is missing something it needs
+   * to fulfil it. Distinct from a 500 on purpose: nothing is broken and there
+   * is no bug to hunt, an operator simply has to finish configuring the
+   * deployment.
+   */
+  static serviceUnavailable(code, message, details) {
+    return new HttpError(503, code, message, details);
+  }
 }

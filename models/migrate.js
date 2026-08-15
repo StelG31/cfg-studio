@@ -47,8 +47,10 @@ export async function migrate() {
  * happens (see models/grammarStore.js).
  */
 async function bootstrapAdmin() {
-  // Usernames are stored lower-cased: UNIQUE on TEXT is case-sensitive, so
-  // "Admin" and "admin" would otherwise become two separate accounts.
+  // Normalised to lower case so ADMIN_USERNAME="Admin" and "admin" mean the
+  // same account across restarts. Case-insensitive uniqueness is enforced by
+  // users_username_lower_key in schema.sql; this just keeps the stored value
+  // predictable.
   const username = (process.env.ADMIN_USERNAME || '').trim().toLowerCase();
   const password = process.env.ADMIN_PASSWORD || '';
 

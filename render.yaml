@@ -4,9 +4,14 @@
 # (the same Express process). Deploy via Render: New → Blueprint → select
 # this repository; Render reads this file and pre-fills everything.
 #
-# Free-tier note: the filesystem is ephemeral, so user-saved grammars reset
-# on redeploys. For durable saves attach a Render Disk and point DATA_DIR
-# at its mount path (no code changes needed).
+# Grammars live in PostgreSQL, so saves survive redeploys and restarts —
+# the filesystem is ephemeral here and is no longer used for user data.
+#
+# DATABASE_URL, ADMIN_USERNAME and ADMIN_PASSWORD are declared with
+# `sync: false`: Render prompts for them once when the blueprint is applied
+# and stores them itself, so no credential is ever committed to this
+# repository. Point DATABASE_URL at a managed PostgreSQL instance with
+# `sslmode=verify-full`.
 
 services:
   - type: web
@@ -22,3 +27,15 @@ services:
         value: production
       - key: NODE_VERSION
         value: 22.12.0
+      # PostgreSQL connection string. Required — the server refuses to start
+      # without it. Include sslmode=verify-full so the connection is
+      # encrypted and the certificate is actually checked.
+      - key: DATABASE_URL
+        sync: false
+      # First administrator, created on the first boot against an empty
+      # database. Both can be cleared once the account exists: the bootstrap
+      # never overwrites an existing account.
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

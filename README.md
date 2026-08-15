@@ -17,7 +17,7 @@ CFG Studio follows the educational philosophy of classroom tools like **JFLAP**,
 - **CYK simulator** — the Cocke–Younger–Kasami algorithm animated cell by cell: the current cell, the two source cells and the rules being used are highlighted while a live caption explains each step. Play / pause / step forward / step back / skip / speed controls. Verdict: **Accepted** or **Rejected**.
 - **Parse tree** — reconstructed from the CYK table's backpointers and rendered as clean SVG: centred tidy layout, pan by dragging, zoom with the wheel or buttons, fit-to-view, and standalone **SVG export**. The leftmost derivation encoded by the tree is listed alongside.
 - **Sample grammars** — Balanced Parentheses, aⁿbⁿ, Arithmetic Expressions, Simple Expression Grammar, Palindromes, Equal numbers of a's and b's — each with suggested accept/reject test strings, loadable with one click.
-- **Save / Load / Import / Export** — grammars persist server-side (JSON file storage behind a REST API); any grammar can be exported to a JSON file and imported back.
+- **Save / Load / Import / Export** — grammars persist server-side in PostgreSQL behind a REST API; any grammar can be exported to a JSON file and imported back.
 - **Polished UX** — toast notifications, confirmation dialogs before destructive actions, loading indicators, tooltips, subtle animations, a Help section with conventions and theory summaries, and a fully responsive layout.
 
 ## Technologies
@@ -26,7 +26,7 @@ CFG Studio follows the educational philosophy of classroom tools like **JFLAP**,
 |---|---|
 | Frontend | HTML5, CSS3, JavaScript ES6+ (native ES modules — **no frontend framework**), Bootstrap 5 (served locally, no CDN) |
 | Backend | Node.js (≥ 18), Express.js |
-| Persistence | JSON files on disk via a dedicated storage layer (see design decision below) |
+| Persistence | PostgreSQL (≥ 13) via `pg`, the pure-JavaScript driver (see design decision below) |
 | Testing | Jest (+ supertest for HTTP-level API tests) |
 | Deployment | Render (single Node web service, `render.yaml` blueprint included) |
 
@@ -34,21 +34,52 @@ CFG Studio follows the educational philosophy of classroom tools like **JFLAP**,
 
 The heart of the project is `core/` — five **pure, dependency-free ES modules** (`grammar.js`, `validator.js`, `cnf.js`, `cyk.js`, `parser.js`) with no DOM and no Node APIs. The browser imports them natively (`<script type="module">`), the Express services import the very same files for the REST endpoints, and Jest tests them directly. Every algorithm therefore exists **exactly once** in the codebase, and one test suite covers both the client and the server behaviour.
 
-### Storage design decision — JSON files instead of SQLite
+### Storage design decision — PostgreSQL with a pure-JavaScript driver
 
-Grammars are small, self-contained, document-shaped objects (a few KB of variables, terminals and productions) that are always read and written as a whole — there are no relational queries, joins, or concurrent-write workloads that would benefit from SQL. JSON-file storage keeps the dependency tree 100 % pure JavaScript: `better-sqlite3` is a native addon, and while prebuilt binaries usually work, any Node-version mismatch on a reviewer's machine falls back to a node-gyp compilation (requiring Python and a C++ toolchain on Windows) — exactly the "zero-setup" failure mode this project must avoid. JSON files are also human-readable, which serves the educational goal: a student can open `data/grammars/*.json` and see precisely how a grammar is represented — the storage format is identical to the app's export format. The storage layer (`models/grammarStore.js`, with atomic write-temp-then-rename semantics and strict id validation) is the only module that touches the filesystem, so swapping in SQLite later is a one-file change — listed under *Future improvements*.
+Storage began as one JSON file per grammar. That was the right choice for a single-user tool, but two forces made it untenable: hosting platforms give a free web service an **ephemeral filesystem**, so every redeploy silently erased saved work; and the next phase introduces **users, roles and teacher–student relationships**, which are relational by nature and would be miserable to maintain as files.
+
+The constraint that ruled out SQLite still holds, and PostgreSQL satisfies it. `better-sqlite3` is a **native addon**: any Node-version mismatch on a reviewer's machine falls back to a node-gyp compilation needing Python and a C++ toolchain on Windows — exactly the zero-setup failure this project must avoid. The `pg` driver is **100 % JavaScript**, so the dependency tree still compiles nothing. (`pg-native` exists and is deliberately *not* used, for the same reason.) Password hashing follows the same rule: `node:crypto`'s `scrypt` rather than `bcrypt` or `argon2`, both of which are native.
+
+Grammars remain document-shaped. `variables`, `terminals` and `productions` are stored as **JSONB**, because a grammar is always read and written whole and there is never a query like "find every grammar containing rule X" — normalising them into child tables would add joins and buy nothing. The relationships that *are* queried — user to grammars, teacher to students — are real columns with real foreign keys. The export format is unchanged, so a student can still inspect exactly how a grammar is represented by exporting one.
+
+The claim that `models/grammarStore.js` was the only module touching persistence turned out to be true: moving from files to SQL replaced that one file and changed **no service, controller or route**.
 
 ---
 
 ## Installation
 
-Requirements: **Node.js ≥ 18** (LTS recommended). Everything else is pure JavaScript — no build tools, no compilers, no database server.
+Requirements: **Node.js ≥ 18** (LTS recommended) and **PostgreSQL ≥ 13**. Every npm dependency is pure JavaScript — no build tools and no compilers.
 
 ```bash
 git clone <repository-url> cfg-studio
 cd cfg-studio
 npm install
 ```
+
+### Database setup
+
+**Development** (`DATABASE_URL`) can point at any PostgreSQL ≥ 13 — a hosted instance or a local one. Nothing needs to be created beyond an empty database: the server builds its own tables on startup.
+
+**Tests** (`TEST_DATABASE_URL`) must point at a **local** database, because the suite issues hundreds of queries and network latency would make runs slow and erratic. Create it once, as a superuser:
+
+```sql
+CREATE ROLE cfg_studio LOGIN PASSWORD 'cfg_studio';
+CREATE DATABASE cfg_studio_test OWNER cfg_studio;
+```
+
+On Windows `psql` is usually not on `PATH` — use pgAdmin's Query Tool, or:
+
+```powershell
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres
+```
+
+Or run PostgreSQL in Docker instead of installing it:
+
+```bash
+docker run --name cfg-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres:18
+```
+
+Then copy `.env.example` to `.env` and fill in both URLs. No schema or migration step is needed.
 
 ## Running locally
 
@@ -59,15 +90,28 @@ npm test        # run the full Jest suite (159 tests)
 npm run test:coverage   # tests + coverage report
 ```
 
-Optional configuration — copy `.env.example` to `.env` and adjust:
+Configuration — copy `.env.example` to `.env` and adjust:
 
 | Variable | Default | Meaning |
 |---|---|---|
+| `DATABASE_URL` | *(required)* | PostgreSQL connection string; the server refuses to start without it |
+| `TEST_DATABASE_URL` | *(required for `npm test`)* | a **local** database whose name must end in `_test` |
+| `ADMIN_USERNAME` | — | first administrator, created on startup if absent |
+| `ADMIN_PASSWORD` | — | that administrator's password, hashed with scrypt before storage |
 | `PORT` | `3000` | HTTP port |
 | `NODE_ENV` | `development` | `production` hides stack traces and enables static caching |
-| `DATA_DIR` | `./data/grammars` | where saved grammars are written |
 
-The application runs with sensible defaults if no `.env` exists.
+TLS is taken from the connection string and never overridden in code: use `sslmode=verify-full` for a remote database and `sslmode=disable` for a local one. Prefer `verify-full` over `require` — they give identical verified TLS today, but `require` prints a deprecation warning and will mean *unverified* TLS in `pg` 9.
+
+If `ADMIN_USERNAME` and `ADMIN_PASSWORD` are missing the server still starts and every algorithm, sample and page works; only saving a grammar fails, with `503 SERVER_NOT_CONFIGURED`. Both variables can be cleared once the account exists — the bootstrap never overwrites an existing account, so changing `ADMIN_PASSWORD` later does not reset a live password.
+
+### How the tests isolate themselves
+
+`npm test` runs against `TEST_DATABASE_URL`, never the development database, and always a **local** one: the suite issues hundreds of queries, so network latency and a suspended cloud database would make runs slow and erratic.
+
+Isolation is pure configuration — no code in the application distinguishes test from production. Jest's `globalSetup` creates a dedicated schema (`cfg_studio_test`), selects it by appending `options=-c search_path=…` to the connection string, migrates it, and drops it again in `globalTeardown`. As a safeguard the harness refuses any database whose name does not end in `_test`.
+
+Because the run shares one schema, `npm test` cannot be run twice concurrently on the same database.
 
 ## Project structure
 
@@ -83,9 +127,13 @@ The application runs with sensible defaults if no `.env` exists.
 ├── routes/                  # API route tables
 ├── controllers/             # thin HTTP request/response handling
 ├── services/                # business rules (validate-before-save, size guards)
-├── models/grammarStore.js   # JSON-file persistence (atomic writes)
-├── utils/                   # HttpError, asyncHandler
-├── data/samples.json        # built-in sample grammars (data/grammars/ holds user saves)
+├── models/                  # the only layer that touches persistence
+│   ├── db.js                #   PostgreSQL pool (lazy, TLS from the URL, retry-once)
+│   ├── schema.sql           #   users / grammars / sessions, idempotent DDL
+│   ├── migrate.js           #   applies the schema + bootstraps the first admin
+│   └── grammarStore.js      #   grammar CRUD
+├── utils/                   # HttpError, asyncHandler, scrypt password hashing
+├── data/samples.json        # built-in sample grammars (read-only)
 ├── views/index.html         # the single-page UI (+ 404 page)
 ├── public/
 │   ├── css/styles.css       # academic theme on top of Bootstrap
@@ -162,8 +210,9 @@ The repository ships with a [`render.yaml`](render.yaml) blueprint: one Node web
 
 **Notes:**
 
-- On the **free tier** the filesystem is *ephemeral*: user-saved grammars survive restarts but are reset on every redeploy, and the service sleeps after inactivity (the first request then takes ~30 s). The built-in samples and every algorithm work regardless.
-- For durable saves, attach a **Render Disk** (paid) and point `DATA_DIR` to its mount path — no code changes required.
+- Provision a **managed PostgreSQL** instance and set `DATABASE_URL` (with `sslmode=verify-full`), plus `ADMIN_USERNAME` and `ADMIN_PASSWORD`. All three are declared `sync: false` in the blueprint, so Render prompts for them and no credential is committed.
+- Saved grammars now survive redeploys: the filesystem is still ephemeral, but nothing user-facing is stored on it. On the **free tier** the service sleeps after inactivity, so the first request takes ~30 s; a database that scales to zero is handled by a single automatic retry.
+- The schema is created automatically on the first boot, before the server accepts traffic. If the migration fails the process exits non-zero and the previous deploy keeps serving.
 - `NODE_ENV=production` is set by the blueprint: stack traces are hidden and static assets are cached.
 
 ## Future improvements
@@ -172,8 +221,8 @@ The repository ships with a [`render.yaml`](render.yaml) blueprint: one Node web
 - Show **all** parse trees of an ambiguous string (the backpointers already store every derivation).
 - Additional transformations: left-recursion elimination, left factoring, Greibach Normal Form.
 - Brute-force derivation explorer for short strings on non-CNF grammars.
-- Swap the storage layer for SQLite/PostgreSQL (one-file change) to enable durable multi-user persistence on serverless platforms.
-- User accounts and shareable grammar links.
+- ~~Swap the storage layer for SQLite/PostgreSQL (one-file change) to enable durable multi-user persistence on serverless platforms.~~ **Done** — and it was indeed a one-file change: `models/grammarStore.js` was rewritten on SQL without touching a single service, controller or route.
+- User accounts and shareable grammar links — the `users` and `sessions` tables already exist.
 - Internationalisation (Greek UI translation).
 
 ## License

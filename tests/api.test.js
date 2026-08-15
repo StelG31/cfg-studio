@@ -2,13 +2,11 @@
  * tests/api.test.js
  * ---------------------------------------------------------------------------
  * HTTP-level tests for the Express API using supertest (no sockets — the
- * app object is exercised in-process). Persistence runs against a fresh
- * temporary DATA_DIR so tests never touch real user data.
+ * app object is exercised in-process). Persistence runs against the
+ * throw-away PostgreSQL schema that tests/setup/globalSetup.js created and
+ * migrated, so tests never touch development data.
  */
 
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import request from 'supertest';
 
 import { anbn, arithmetic } from './fixtures/grammars.js';
@@ -16,18 +14,22 @@ import { validateGrammar } from '../core/validator.js';
 import { createGrammar } from '../core/grammar.js';
 
 let app;
-let tempDir;
+let db;
 
 beforeAll(async () => {
-  // The store resolves DATA_DIR on every call, so pointing the environment
-  // at a temp directory BEFORE the first request is all isolation needs.
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-studio-test-'));
-  process.env.DATA_DIR = tempDir;
+  // DATABASE_URL already points at the test schema. The import below must
+  // stay DYNAMIC: models/db.js reads that variable while it is being
+  // evaluated, not when it is called, so a static import at the top of this
+  // file would run before the environment was ready.
   ({ default: app } = await import('../app.js'));
+  // The same module instance the app uses — Jest keeps one module registry
+  // per test file.
+  db = await import('../models/db.js');
 });
 
-afterAll(() => {
-  fs.rmSync(tempDir, { recursive: true, force: true });
+afterAll(async () => {
+  // Release the pool the app opened, or Jest hangs on an open handle.
+  await db.close();
 });
 
 describe('grammar CRUD round-trip', () => {

@@ -21,6 +21,11 @@
     "roots": [
       "<rootDir>/tests"
     ],
+    "globalSetup": "<rootDir>/tests/setup/globalSetup.js",
+    "globalTeardown": "<rootDir>/tests/setup/globalTeardown.js",
+    "setupFiles": [
+      "<rootDir>/tests/setup/setupEnv.js"
+    ],
     "collectCoverageFrom": [
       "core/**/*.js",
       "models/**/*.js",

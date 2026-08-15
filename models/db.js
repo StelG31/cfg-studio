@@ -39,27 +39,38 @@ const POOL_SETTINGS = {
   connectionTimeoutMillis: 10_000,
 };
 
-/** Syscall-level failures: the TCP connection was never established. */
+/**
+ * Syscall-level failures seen while opening the socket. ECONNRESET and EPIPE
+ * belong here — during connection setup they are unambiguous, because no
+ * statement has been sent yet. A suspended serverless database typically
+ * refuses or resets the first connection, which is precisely this case.
+ */
 const RETRYABLE_SYSCALL_CODES = new Set([
   'ECONNREFUSED',
+  'ECONNRESET',
+  'EPIPE',
   'ENOTFOUND',
+  'EAI_AGAIN',
   'ETIMEDOUT',
   'EHOSTUNREACH',
   'ENETUNREACH',
 ]);
 
 /**
- * PostgreSQL SQLSTATEs safe to retry.
+ * PostgreSQL SQLSTATEs raised while refusing a connection. 57P03
+ * (cannot_connect_now) is the server explicitly saying "still starting up".
+ * Class 08 is connection_exception.
  *
- * 57P03 (cannot_connect_now) is the server explicitly saying "still starting
- * up" — exactly the scale-to-zero wake-up case, and no statement has run.
- *
- * Notably ABSENT, on purpose: 08007 (transaction_resolution_unknown) and
- * mid-query ECONNRESET/EPIPE. Those are ambiguous — the statement may well
- * have committed before the connection died, and retrying a committed INSERT
- * would silently duplicate a row. A slow error beats a wrong write.
+ * 08007 (transaction_resolution_unknown) is excluded before the class check
+ * below, and must stay excluded: it is the one code meaning "we cannot tell
+ * whether your transaction committed".
  */
-const RETRYABLE_SQL_STATES = new Set(['57P03']);
+const RETRYABLE_SQL_STATES = new Set(['57P01', '57P02', '57P03']);
+
+/** A waking database needs a moment; an instant retry just burns the budget. */
+const RETRY_DELAY_MS = 250;
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let pool = null;
 
@@ -95,47 +106,67 @@ function getPool() {
 }
 
 /**
- * True only when the query provably never reached the server, so re-running
- * it cannot duplicate an effect.
+ * Whether one more attempt at OPENING a connection is worth making.
  *
- * @param {Error} err Error thrown by pg.
+ * @param {Error} err Error thrown while connecting.
  * @returns {boolean}
  */
-function isRetryable(err) {
-  if (RETRYABLE_SYSCALL_CODES.has(err.code)) return true;
-  if (RETRYABLE_SQL_STATES.has(err.code)) return true;
-  // The pool timed out waiting for a free connection to be established.
-  return err.message === 'timeout exceeded when trying to connect';
+function isTransientConnectionError(err) {
+  const code = err?.code;
+  // Excluded before the class-08 rule below so that widening that rule can
+  // never quietly re-admit it.
+  if (code === '08007') return false;
+  if (typeof code === 'string' && code.startsWith('08')) return true;
+  if (RETRYABLE_SQL_STATES.has(code)) return true;
+  if (RETRYABLE_SYSCALL_CODES.has(code)) return true;
+  // pg-pool reports its own connectionTimeoutMillis as a bare Error with no
+  // code. Matching the message is ugly, but this failure is pre-execution by
+  // definition and there is no other discriminator.
+  return err?.message === 'timeout exceeded when trying to connect';
 }
 
 /**
- * Run a parameterized statement.
+ * Check out a client, retrying ONCE on a transient connection failure.
  *
- * @param {string} text   SQL, with $1-style placeholders.
- * @param {Array}  params Bound values.
- * @returns {Promise<import('pg').QueryResult>}
+ * The retry wraps connect() and NOT the query, and that is a correctness
+ * property rather than a stylistic choice. Failing to obtain a connection
+ * proves no statement was sent, so repeating it cannot duplicate anything.
+ * Once a statement has been written to the socket its outcome is unknowable
+ * — a reset may mean "never arrived", "rolled back", or "committed but the
+ * acknowledgement was lost" — so statements are never retried. This is what
+ * makes a duplicate INSERT unreachable rather than merely unlikely.
+ *
+ * @returns {Promise<import('pg').PoolClient>}
  */
-export async function query(text, params) {
+async function acquire() {
   try {
-    return await getPool().query(text, params);
+    return await getPool().connect();
   } catch (err) {
-    if (!isRetryable(err)) throw err;
+    if (!isTransientConnectionError(err)) throw err;
 
-    console.warn(`[db] Connection failed (${err.code || err.message}); retrying once.`);
-    return getPool().query(text, params);
+    console.warn(
+      `[db] Connection failed (${err.code || err.message}); retrying once in ${RETRY_DELAY_MS}ms.`
+    );
+    await delay(RETRY_DELAY_MS);
+    return getPool().connect();
   }
 }
 
 /**
- * Check out a dedicated client for work that must run on ONE session —
- * advisory locks and transactions. Callers must release it in a finally
- * block. Not retried: a retry would silently move the work to a different
- * session, which defeats the reason for checking a client out at all.
+ * Run a statement, or — with no parameters — a multi-statement script.
  *
- * @returns {Promise<import('pg').PoolClient>}
+ * @param {string} text     SQL, with $1-style placeholders.
+ * @param {Array}  [params] Bound values. JSONB values must already be
+ *        strings: pg serialises a JS array as a PostgreSQL array literal.
+ * @returns {Promise<import('pg').QueryResult>}
  */
-export async function getClient() {
-  return getPool().connect();
+export async function query(text, params) {
+  const client = await acquire();
+  try {
+    return await client.query(text, params);
+  } finally {
+    client.release();
+  }
 }
 
 /** Close the pool so the process (or Jest) can exit cleanly. Idempotent. */

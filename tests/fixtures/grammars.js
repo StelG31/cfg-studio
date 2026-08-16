@@ -75,6 +75,24 @@ export function palindromes() {
   });
 }
 
+/** L = { w ∈ {a,b}* | w contains equally many a's and b's } — nullable AND
+ *  ambiguous (S → S S overlaps every other rule), so it stresses the ε
+ *  handling and the derivation bookkeeping at the same time. */
+export function equalAsBs() {
+  return createGrammar({
+    name: "Equal numbers of a's and b's",
+    variables: ['S'],
+    terminals: ['a', 'b'],
+    startSymbol: 'S',
+    productions: [
+      { left: 'S', right: ['a', 'S', 'b'] },
+      { left: 'S', right: ['b', 'S', 'a'] },
+      { left: 'S', right: ['S', 'S'] },
+      { left: 'S', right: [] },
+    ],
+  });
+}
+
 /** Grammar with an unreachable variable (B) and an unused terminal (c). */
 export function withUselessSymbols() {
   return createGrammar({

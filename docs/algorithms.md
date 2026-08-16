@@ -9,7 +9,9 @@ This document explains every algorithm implemented in `core/` **before** its imp
 3. [Conversion to Chomsky Normal Form](#3-conversion-to-chomsky-normal-form) — `core/cnf.js`
 4. [The CYK membership algorithm](#4-the-cyk-membership-algorithm) — `core/cyk.js`
 5. [Parse-tree reconstruction](#5-parse-tree-reconstruction) — `core/parser.js`
-6. [Parse-tree layout and rendering](#6-parse-tree-layout-and-rendering) — `public/js/tree.js`
+6. [The Earley recogniser](#6-the-earley-recogniser) — `core/earley.js`
+7. [Earley parse-tree reconstruction](#7-earley-parse-tree-reconstruction) — `core/earley-tree.js`
+8. [Parse-tree layout and rendering](#8-parse-tree-layout-and-rendering) — `public/js/tree.js`
 
 ---
 
@@ -263,7 +265,147 @@ The tree of a CNF derivation of a length-n string has exactly n leaves, n−1 in
 
 ---
 
-## 6. Parse-tree layout and rendering
+## 6. The Earley recogniser
+
+### Theory
+
+**Earley's algorithm** decides w ∈ L(G) for an **arbitrary** context-free grammar — no normal form, no restriction on the shape of the productions. In place of a table indexed by substrings it maintains n + 1 **columns** of *items*.
+
+An **item** is a production with a marker (the *dot*) somewhere in its right-hand side, together with an **origin**:
+
+> **A → α • β (j)** in column *c* means: some production of A began at position j, the parser has matched α against w_{j+1}…w_c, and it is now looking for β.
+
+Column c holds every item consistent with the first c input symbols. Column 0 is seeded with **S → •γ (0)** for every rule of S. Three operations then close each column:
+
+- **PREDICT** — `A → α • B β (j)` with B a variable: any rule of B could start here, so add **B → •γ (c)** for every B → γ.
+- **SCAN** — `A → α • a β (j)` with a a terminal: if a = w_{c+1}, add **A → α a • β (j)** to column c+1. This is the only operation that consumes input, which is why the columns fill left to right.
+- **COMPLETE** — `B → γ • (j)`: B has been recognised over w_{j+1}…w_c, so every item in column **j** whose dot sits before B moves its dot across it, the result landing in column c.
+
+w ∈ L(G) iff column n contains **S → γ • (0)** for some rule S → γ.
+
+Left recursion needs no special treatment. `E → • E + T (c)` predicts E, whose rules are already present in column c, so prediction reaches a fixpoint instead of recursing — exactly where a recursive-descent parser would fail to terminate.
+
+### Pseudo-code
+
+```
+CHART[0] ← { S → •γ (0) : S → γ ∈ P }
+
+for c ← 0 to n:
+    for each item I in CHART[c]:                 # CHART[c] GROWS during this loop
+        if I = A → α•Bβ (j), B a variable:       # PREDICT
+            for each B → γ ∈ P:
+                add B → •γ (c) to CHART[c]
+            EPSILON-REPAIR(c, I, B)
+        else if I = A → α•aβ (j), a a terminal:  # SCAN
+            if c < n and a = w[c+1]:
+                add A → αa•β (j) to CHART[c+1]
+        else if I = B → γ• (j):                  # COMPLETE
+            if j = c: remember (B, I) as an ε-completion of column c
+            for each A → α•Bβ (i) in CHART[j]:   # bound re-read at every step
+                add A → αB•β (i) to CHART[c]
+
+accept iff S → γ• (0) ∈ CHART[n] for some rule S → γ
+```
+
+`add` is an **upsert** keyed on (production, dot, origin): an item never appears twice in a column, which is what makes the growing loop terminate.
+
+### ε-productions: why COMPLETE must re-examine its own column
+
+This is the classic subtle failure of Earley implementations (Aycock & Horspool, *Practical Earley Parsing*, 2002), and it is not a rare corner — four of CFG Studio's six sample grammars contain an ε-production.
+
+When B derives ε the item **B → • (c)** is complete the instant it is predicted, and its origin is the column it lives in. COMPLETE must therefore scan *the column currently being built*, the one still growing beneath it. The main loop copes with that much on its own, because it re-reads the column's length at every step.
+
+The real failure is one of **ordering**. Take
+
+> S → A B  B → A c  A → ε
+
+on the input `c`. Column 0 fills like this:
+
+| # | item | added by |
+|---|---|---|
+| 0 | `S → •A B (0)` | seed |
+| 1 | `A → • (0)` | PREDICT A from 0 |
+| 2 | `S → A•B (0)` | COMPLETE 1, scanning column 0 |
+| 3 | `B → •A c (0)` | PREDICT B from 2 |
+
+Item 3 is waiting for an A — and A already derived ε here, at item 1. But the completer for item 1 ran while the column still ended at item 2, and it will never run again. Predicting A from item 3 produces `A → • (0)`, a **duplicate**, which the upsert discards, so no completion fires. `B → A•c (0)` is never created, the `c` is never scanned, and the parser reports c ∉ L(G) — although S ⇒ A B ⇒ B ⇒ A c ⇒ c.
+
+The repair makes the *predictor* responsible for the completions it arrived too late for. Each column remembers which variables were completed in it with that column as their origin; whenever the dot of a newly examined item sits before such a variable, the predictor advances the dot itself:
+
+```
+EPSILON-REPAIR(c, I = A → α•Bβ (j), B):
+    for each ε-completion (B, C) remembered in column c:
+        add A → αB•β (j) to CHART[c], recording C as the subtree for B
+```
+
+**Why the two halves are exhaustive.** Take any waiting item W (dot before B) and any completion C of B with origin c, both in column c. If C entered the column after W, then C's own scan of the column finds W. If C entered before W, the repair fires when the main loop reaches W. One of the two always holds, so the pair is never missed — and since the upsert also discards a derivation it has already recorded, it is never counted twice either. A completion whose origin j is an *earlier* column needs no repair at all: column j stopped growing when the parser moved past it.
+
+One point deserves stating plainly, because it is the trap. This is not a bug that surfaces on the obvious test cases: every one of the sample grammars, the nullable ones included, parses correctly *without* the repair. The four-rule grammar above was constructed specifically to expose the ordering, and it is what the regression test pins.
+
+### Complexity
+
+Each column holds O(|P| · n) distinct items — a production, a dot and an origin — and COMPLETE may pair each of them against the items of one earlier column, giving **O(n³)** in the worst case, the standard bound for general context-free recognition. The bound tightens by itself on well-behaved grammars: **O(n²)** for unambiguous grammars and **O(n)** for the LR(k)-recognisable ones, simply because fewer items survive in each column. No property of the grammar has to be declared or tested to obtain this.
+
+CFG Studio caps the input at 30 characters, keeping the recorded trace bounded and the chart readable.
+
+### Implementation details (`core/earley.js`)
+
+- `runEarley(grammar, input)` returns `{accepted, input, n, startSymbol, chart, steps}` — plain JSON throughout, so the result travels over the REST API unchanged.
+- Preconditions throw a typed `EarleyError` carrying a stable code: `GRAMMAR_INVALID`, `INVALID_INPUT`, `INPUT_TOO_LONG`, `INVALID_INPUT_CHAR` (the last naming the exact position). The grammar check follows `convertToCnf`'s precedent — `runEarley` receives the user's *original* grammar and is reachable directly, so it validates rather than assuming. It also earns something concrete: afterwards every right-hand-side symbol is known to be a declared variable or a declared terminal, so the main loop needs no defensive branch.
+- The empty string needs **no special case**. With n = 0 the chart is the single column 0, and a rule S → ε is seeded there as the already-complete item `S → • (0)`, which the ordinary acceptance test finds like any other.
+- Items are deduplicated per column on a key of (production, dot, origin) joined with U+001F — the same collision-free separator `productionKey` uses.
+- Every item keeps **all** the derivations that reached it, not just the first: that preserves ambiguity information and gives §7 its backpointers. A derivation is `{type:'scan', back}` or `{type:'complete', back, child}`, where `back` points at the same production one dot earlier and `child` at the completed item that was consumed.
+- Besides the chart, `runEarley` emits a **step trace** for the animation: `begin` → `predict` / `scan` / `complete` per operation → `column-done` per column → `verdict`. Completions produced by the ε repair carry `nullableRepair: true` and say so in their explanation, so the ε case is visible to the reader instead of buried in the machinery.
+
+---
+
+## 7. Earley parse-tree reconstruction
+
+### Theory
+
+The chart says *that* the input parses; the backpointers say *how*. Every item records the one step by which its dot advanced: a SCAN consumed a terminal, a COMPLETE consumed an entire sub-derivation. Reading those records backwards turns an item into a tree node.
+
+For a completed item **A → X₁…X_m • (j)** in column c the children are recovered by walking the chain from dot m down to dot 0. Each step yields one child, right to left: a scan step contributes a terminal leaf, a completion step contributes the subtree of the item it consumed. The node spans w_{j+1}…w_c, is labelled A, and carries the production A → X₁…X_m itself.
+
+That last point is the reason this module exists. The nodes are labelled with the productions **the user wrote** — n-ary, exactly as typed. Nothing has to be mapped back from a converted grammar, because nothing was ever converted.
+
+### Pseudo-code
+
+```
+BUILD(item):                        # item is complete: A → X₁…X_m • (j), in column c
+    children ← []
+    cursor ← item
+    while cursor.dot > 0:
+        d ← cursor.derivations[0]
+        if d is a scan:        prepend leaf(w[d.back.column + 1]) to children
+        if d is a completion:  prepend BUILD(d.child)             to children
+        cursor ← d.back
+    if m = 0: children ← [ ε-leaf ]
+    return node(A, span = (j, c − j), production = A → X₁…X_m, children)
+
+tree ← BUILD(the completed S-item with origin 0 in column n)
+```
+
+### Why the walk terminates
+
+A grammar with a unit cycle (A → B, B → A) or with nullable variables admits infinitely many derivation trees for the same string, and zero-width children make any span-shrinking argument useless — so a walk that chose its derivations carelessly could descend forever.
+
+Taking `derivations[0]` settles it. That entry is the derivation which **created** the item, so both pointers it carries — the predecessor and the consumed child — refer to items that already existed at that moment. Every step of the walk therefore moves to an item created strictly earlier in the chart. That is a well-founded order, so the descent must stop: no visited set, no depth limit, and the same input always yields the same tree.
+
+### Complexity
+
+A single pass over the backpointers, one node per symbol of the productions applied along the chosen derivation: **O(number of nodes in the tree)**, after the recognition work of §6. For an ambiguous string one tree is produced — deterministically the first — while the remaining derivations stay in the chart.
+
+### Implementation details (`core/earley-tree.js`)
+
+- `buildEarleyTree(earleyResult)` returns the root node, or `null` for a rejected run.
+- The node shape is deliberately **identical** to the one `core/parser.js` documents: `{symbol, span, production, children}`, leaves flagged `terminal: true`, the ε leaf additionally `epsilon: true`. `frontier`, `countNodes`, `treeDepth` and `leftmostDerivation` are therefore shared rather than reimplemented, and the renderer of §8 draws either kind of tree without knowing which module produced it.
+- A node for an ε-production carries the single ε leaf, so `frontier` skips it and the tree's yield still spells the input exactly.
+- An inconsistent chart raises rather than silently mis-building — the same guard `buildParseTree` uses.
+
+---
+
+## 8. Parse-tree layout and rendering
 
 ### Theory
 

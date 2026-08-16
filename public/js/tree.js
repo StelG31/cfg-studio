@@ -6,7 +6,7 @@
  *   (pan, wheel-zoom around the cursor, zoom buttons, fit-to-view) and a
  *   standalone SVG export. Hand-rolled on plain SVG — no drawing library.
  *
- *   Layout (docs/algorithms.md §6): the classic simplification of
+ *   Layout (docs/algorithms.md §8): the classic simplification of
  *   Reingold–Tilford for trees whose leaves are ordered — a post-order
  *   pass gives every leaf the next free horizontal slot and centres every
  *   internal node over its children. O(n), crossing-free.

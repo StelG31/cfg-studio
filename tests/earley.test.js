@@ -469,6 +469,46 @@ describe('chart and trace anatomy', () => {
 });
 
 /* ------------------------------------------------------------------------ */
+/* Incomplete grammars                                                       */
+/* ------------------------------------------------------------------------ */
+
+describe('grammars with a variable that has no rules', () => {
+  // A student halfway through typing a grammar. These validate (a variable
+  // without rules is merely non-generating, which is a warning), so Earley
+  // must reject cleanly rather than throw or loop.
+  test('a variable used on a right-hand side but never defined derives nothing', () => {
+    const grammar = createGrammar({
+      name: 'Undefined variable',
+      variables: ['S', 'A'],
+      terminals: ['a'],
+      startSymbol: 'S',
+      productions: [{ left: 'S', right: ['A', 'a'] }],
+    });
+
+    const result = runEarley(grammar, 'a');
+    expect(result.accepted).toBe(false);
+    expect(buildEarleyTree(result)).toBeNull();
+    // The dot never gets past A, so nothing is ever predicted for it.
+    expect(result.steps.some((step) => step.type === 'predict' && step.symbol === 'A')).toBe(true);
+  });
+
+  test('a start symbol with no rules leaves column 0 empty and rejects', () => {
+    const grammar = createGrammar({
+      name: 'Start symbol without rules',
+      variables: ['S', 'A'],
+      terminals: ['a'],
+      startSymbol: 'S',
+      productions: [{ left: 'A', right: ['a'] }],
+    });
+
+    const result = runEarley(grammar, '');
+    expect(result.accepted).toBe(false);
+    expect(result.chart[0].items).toEqual([]);
+    expect(result.steps[0].explanation).toContain('∅');
+  });
+});
+
+/* ------------------------------------------------------------------------ */
 /* Typed errors                                                              */
 /* ------------------------------------------------------------------------ */
 

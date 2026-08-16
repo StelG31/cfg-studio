@@ -96,7 +96,15 @@ function assertRunnable(grammar, input) {
   }
 }
 
-/** Two derivations describe the same route iff every pointer agrees. */
+/**
+ * Two derivations describe the same route iff every pointer agrees.
+ *
+ * Only completions ever reach this in practice: a scanned item lands in the
+ * next column with a dot that no predict (dot 0) and no completion (which
+ * needs a variable before the dot, where a scan needs a terminal) can also
+ * produce, so it is always new. The `child` guards keep the comparison total
+ * rather than guarding against a collision that can happen.
+ */
 function sameDerivation(a, b) {
   return (
     a.type === b.type &&

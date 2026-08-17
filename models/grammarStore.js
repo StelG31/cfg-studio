@@ -28,12 +28,24 @@
  *     - test_strings is never selected. The column exists for the phase that
  *       will use it, but the document contract has no such field, so a
  *       SELECT * here would silently add a key to every document.
+ *     - ownerId IS part of the document, added deliberately (not by a stray
+ *       SELECT *) when accounts arrived: the browser needs it to tell "mine"
+ *       from "my student's" without a second request. ownerTeacherId is NOT —
+ *       it is returned beside the document, for the service to authorize on,
+ *       and never reaches a client.
+ *
+ *   Ownership filtering:
+ *     Reads and writes take a scope produced by scopeFor() in
+ *     services/userService.js — this module never decides who may see what,
+ *     it only applies the filter it is handed. The service checks canAccess()
+ *     as well, so an owner predicate here is a SECOND lock rather than the
+ *     only one; it closes the gap between reading a row to authorize it and
+ *     writing it a moment later.
  */
 
 import crypto from 'node:crypto';
 
 import { query } from './db.js';
-import { HttpError } from '../utils/httpError.js';
 
 /** UUIDs (and nothing else) are acceptable document ids. */
 const ID_PATTERN = /^[a-f0-9-]{36}$/i;
@@ -74,6 +86,7 @@ function asUuid(id) {
 
 /** The columns every full-document read returns, in interface order. */
 const DOCUMENT_COLUMNS = `id,
+            owner_id,
             name,
             COALESCE(description, '') AS description,
             variables,
@@ -91,6 +104,7 @@ const DOCUMENT_COLUMNS = `id,
 function toDocument(row) {
   return {
     id: row.id,
+    ownerId: row.owner_id,
     name: row.name,
     description: row.description ?? '',
     variables: row.variables,
@@ -100,6 +114,35 @@ function toDocument(row) {
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };
+}
+
+/**
+ * Build the WHERE fragment for a listing, from a scope descriptor.
+ *
+ * Returns the SQL and the bound values so the caller cannot accidentally get
+ * the placeholder numbering wrong. 'none' yields a predicate that is false
+ * for every row rather than an empty one: a scope the policy refused must
+ * return nothing, and "no filter" would return everything.
+ *
+ * @param {{kind: string, userId: string|null}} scope From userService.scopeFor().
+ * @param {string} column The qualified owner column ('owner_id' or 'g.owner_id').
+ *        A fixed argument chosen by this module — never anything client-supplied.
+ * @returns {{where: string, values: Array}}
+ */
+function scopeClause(scope, column) {
+  switch (scope?.kind) {
+    case 'all':
+      return { where: '', values: [] };
+    case 'self':
+      return { where: `WHERE ${column} = $1`, values: [scope.userId] };
+    case 'self-and-students':
+      return {
+        where: `WHERE ${column} = $1 OR ${column} IN (SELECT id FROM users WHERE teacher_id = $1)`,
+        values: [scope.userId],
+      };
+    default:
+      return { where: 'WHERE false', values: [] };
+  }
 }
 
 /** The bound parameters shared by create() and update(), after the id. */
@@ -119,25 +162,39 @@ function grammarValues(grammar) {
 /* ------------------------------------------------------------------------ */
 
 /**
- * List every stored grammar as lightweight metadata (the full production
- * list stays in the database), newest first.
+ * List the stored grammars visible under `scope` as lightweight metadata (the
+ * full production list stays in the database), newest first.
+ *
+ * The owner's username travels with each row so the browser can label a
+ * teacher's view of a student's work without a request per grammar.
+ *
+ * @param {{kind: string, userId: string|null}} scope From userService.scopeFor().
  */
-export async function list() {
+export async function list(scope) {
+  const { where, values } = scopeClause(scope, 'g.owner_id');
+
   const { rows } = await query(
-    `SELECT id,
-            name,
-            COALESCE(description, '')       AS description,
-            jsonb_array_length(variables)   AS variable_count,
-            jsonb_array_length(terminals)   AS terminal_count,
-            jsonb_array_length(productions) AS production_count,
-            created_at,
-            updated_at
-       FROM grammars
-      ORDER BY updated_at DESC, id DESC`
+    `SELECT g.id,
+            g.owner_id,
+            owner.username                    AS owner_username,
+            g.name,
+            COALESCE(g.description, '')       AS description,
+            jsonb_array_length(g.variables)   AS variable_count,
+            jsonb_array_length(g.terminals)   AS terminal_count,
+            jsonb_array_length(g.productions) AS production_count,
+            g.created_at,
+            g.updated_at
+       FROM grammars g
+       JOIN users owner ON owner.id = g.owner_id
+      ${where}
+      ORDER BY g.updated_at DESC, g.id DESC`,
+    values
   );
 
   return rows.map((row) => ({
     id: row.id,
+    ownerId: row.owner_id,
+    ownerUsername: row.owner_username,
     name: row.name,
     description: row.description ?? '',
     variableCount: row.variable_count,
@@ -148,50 +205,73 @@ export async function list() {
   }));
 }
 
-/** @returns {Promise<object|null>} the full document, or null if absent. */
+/**
+ * Fetch one grammar together with what is needed to authorize access to it.
+ *
+ * The owner descriptor is returned SEPARATELY from the document rather than
+ * folded into it: ownerTeacherId is nobody's business but the authorization
+ * check's, and a field that never enters the document can never be
+ * serialised to a client by accident.
+ *
+ * @returns {Promise<{document: object, owner: {id: string, username: string, teacherId: string|null}}|null>}
+ *          null if absent.
+ */
 export async function get(id) {
   const uuid = asUuid(id);
   if (uuid === null) return null;
 
-  const { rows } = await query(`SELECT ${DOCUMENT_COLUMNS} FROM grammars WHERE id = $1`, [uuid]);
-  return rows.length === 0 ? null : toDocument(rows[0]);
+  const { rows } = await query(
+    `SELECT g.id,
+            g.owner_id,
+            g.name,
+            COALESCE(g.description, '') AS description,
+            g.variables,
+            g.terminals,
+            g.start_symbol,
+            g.productions,
+            g.created_at,
+            g.updated_at,
+            owner.username   AS owner_username,
+            owner.teacher_id AS owner_teacher_id
+       FROM grammars g
+       JOIN users owner ON owner.id = g.owner_id
+      WHERE g.id = $1`,
+    [uuid]
+  );
+
+  if (rows.length === 0) return null;
+  const row = rows[0];
+
+  return {
+    document: toDocument(row),
+    owner: {
+      id: row.owner_id,
+      username: row.owner_username,
+      teacherId: row.owner_teacher_id,
+    },
+  };
 }
 
 /**
- * Persist a new grammar, owned by the bootstrap administrator.
+ * Persist a new grammar owned by `ownerId`.
  *
- * Ownership is resolved in the same statement rather than in a prior query:
- * one round trip, and no chance of the owner disappearing between the two.
- * Until the authentication phase lands there is no per-request user, so
- * every grammar belongs to the administrator.
+ * Before accounts existed this resolved the owner with a sub-select over the
+ * administrators, and failed loudly when there were none. Both are gone: a
+ * grammar can only be saved through a session now, so there is always a real
+ * owner and the "server not configured" case cannot arise.
  *
  * @param {object} grammar A normalized grammar (the service validated it).
+ * @param {string} ownerId The signed-in user saving it.
  * @returns {Promise<object>} the stored document — the grammar plus
- *          { id: randomUUID, createdAt, updatedAt } (ISO timestamps).
- * @throws {HttpError} 503 SERVER_NOT_CONFIGURED when no administrator exists.
+ *          { id: randomUUID, ownerId, createdAt, updatedAt } (ISO timestamps).
  */
-export async function create(grammar) {
+export async function create(grammar, ownerId) {
   const { rows } = await query(
     `INSERT INTO grammars (id, owner_id, name, description, variables, terminals, start_symbol, productions)
-     SELECT $1, u.id, $2, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb
-       FROM users u
-      WHERE u.role = 'admin'
-      ORDER BY u.created_at, u.id
-      LIMIT 1
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8::jsonb)
      RETURNING ${DOCUMENT_COLUMNS}`,
-    [crypto.randomUUID(), ...grammarValues(grammar)]
+    [crypto.randomUUID(), ownerId, ...grammarValues(grammar)]
   );
-
-  // No administrator means the sub-select matched nothing, so the INSERT
-  // stored nothing — and said so silently. Reporting that as success would
-  // lose the grammar, so it becomes an explicit, actionable failure.
-  if (rows.length === 0) {
-    throw HttpError.serviceUnavailable(
-      'SERVER_NOT_CONFIGURED',
-      'The server has no administrator account yet, so grammars cannot be saved. ' +
-        'Set ADMIN_USERNAME and ADMIN_PASSWORD and restart the server.'
-    );
-  }
 
   return toDocument(rows[0]);
 }
@@ -201,11 +281,28 @@ export async function create(grammar) {
  * ownership are preserved by never appearing in the SET list; updatedAt is
  * bumped.
  *
- * @returns {Promise<object|null>} the updated document, or null if absent.
+ * `ownerId` is an optional second lock. The service has already checked
+ * canAccess() against the row it read a moment ago; adding the owner to the
+ * WHERE makes the write itself conditional, so a row that changed hands in
+ * between is not overwritten on the strength of a stale read. An admin passes
+ * nothing, because they may edit any grammar.
+ *
+ * @param {string} id
+ * @param {object} grammar
+ * @param {{ownerId?: string}} [guard]
+ * @returns {Promise<object|null>} the updated document, or null if absent or
+ *          not matching the guard.
  */
-export async function update(id, grammar) {
+export async function update(id, grammar, { ownerId } = {}) {
   const uuid = asUuid(id);
   if (uuid === null) return null;
+
+  const values = [uuid, ...grammarValues(grammar)];
+  let ownerPredicate = '';
+  if (ownerId !== undefined) {
+    values.push(ownerId);
+    ownerPredicate = ` AND owner_id = $${values.length}`;
+  }
 
   const { rows } = await query(
     `UPDATE grammars
@@ -216,19 +313,33 @@ export async function update(id, grammar) {
             start_symbol = $6,
             productions  = $7::jsonb,
             updated_at   = now()
-      WHERE id = $1
+      WHERE id = $1${ownerPredicate}
      RETURNING ${DOCUMENT_COLUMNS}`,
-    [uuid, ...grammarValues(grammar)]
+    values
   );
 
   return rows.length === 0 ? null : toDocument(rows[0]);
 }
 
-/** @returns {Promise<boolean>} true if a document was deleted. */
-export async function remove(id) {
+/**
+ * @param {string} id
+ * @param {{ownerId?: string}} [guard] Same second lock as update().
+ * @returns {Promise<boolean>} true if a document was deleted.
+ */
+export async function remove(id, { ownerId } = {}) {
   const uuid = asUuid(id);
   if (uuid === null) return false;
 
-  const { rowCount } = await query('DELETE FROM grammars WHERE id = $1', [uuid]);
+  const values = [uuid];
+  let ownerPredicate = '';
+  if (ownerId !== undefined) {
+    values.push(ownerId);
+    ownerPredicate = ` AND owner_id = $${values.length}`;
+  }
+
+  const { rowCount } = await query(
+    `DELETE FROM grammars WHERE id = $1${ownerPredicate}`,
+    values
+  );
   return rowCount > 0;
 }

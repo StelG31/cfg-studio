@@ -26,14 +26,23 @@ import compression from 'compression';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import authRoutes from './routes/authRoutes.js';
 import computeRoutes from './routes/computeRoutes.js';
 import grammarRoutes from './routes/grammarRoutes.js';
+import userRoutes from './routes/userRoutes.js';
+import { requireAuth } from './middleware/requireAuth.js';
+import { requireRole } from './middleware/requireRole.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 
 const isProduction = () => process.env.NODE_ENV === 'production';
+
+// Render terminates TLS at its proxy and forwards over plain HTTP, so without
+// this Express believes every request is insecure. Trusting exactly one hop —
+// never `true`, which would let a client forge X-Forwarded-For at will.
+if (isProduction()) app.set('trust proxy', 1);
 
 // ---------------------------------------------------------------------------
 // Global middleware
@@ -69,11 +78,38 @@ app.use(
 );
 
 // ---------------------------------------------------------------------------
+// Access control
+// ---------------------------------------------------------------------------
+
+// EVERY protected path in the application is listed here, and nowhere else.
+// Route files stay pure path→handler tables, which means protection cannot be
+// forgotten by adding an endpoint to one of them: a reviewer checks this
+// block, not five files. Mounted before the routes, because Express runs
+// middleware in the order it was added.
+//
+// What is deliberately NOT here:
+//   POST /api/auth/login  — you cannot need a session to create one.
+//   /api/validate, /api/cnf, /api/cyk, /api/examples — stateless algorithm
+//     endpoints over data the caller supplies in the request. They hold no
+//     user data, are already bounded by LIMITS in services/computeService.js,
+//     and exist to be usable from a script. Requiring a session there would
+//     protect nothing.
+app.use('/api/auth/logout', requireAuth);
+app.use('/api/auth/me', requireAuth);
+app.use('/api/auth/password', requireAuth);
+app.use('/api/grammars', requireAuth);
+// The role gate is a coarse first refusal; canAccess() still decides every
+// individual target underneath it (see middleware/requireRole.js).
+app.use('/api/users', requireAuth, requireRole('admin', 'teacher'));
+
+// ---------------------------------------------------------------------------
 // API routes
 // ---------------------------------------------------------------------------
 
+app.use('/api', authRoutes);
 app.use('/api', computeRoutes);
 app.use('/api', grammarRoutes);
+app.use('/api', userRoutes);
 
 // ---------------------------------------------------------------------------
 // Pages & health check

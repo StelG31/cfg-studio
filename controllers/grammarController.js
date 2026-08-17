@@ -6,6 +6,13 @@
  *   examples. Thin by design: unwrap the request, call the service, choose
  *   the status code. Every error path is an HttpError thrown by the service
  *   and rendered by the central error middleware.
+ *
+ *   Every persistence handler passes req.user — placed there by
+ *   middleware/requireAuth.js — as the first argument, and makes no
+ *   authorization decision itself. The actor comes from the session cookie
+ *   and never from the request body, so a client cannot claim to be someone
+ *   else. listExamples is the exception: the samples ship with the app and
+ *   belong to nobody.
  */
 
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -28,7 +35,7 @@ function grammarFromBody(body) {
  *           (production lists stay on disk), newest first.
  */
 export const listGrammars = asyncHandler(async (req, res) => {
-  res.json(await grammarService.listGrammars());
+  res.json(await grammarService.listGrammars(req.user));
 });
 
 /**
@@ -37,7 +44,7 @@ export const listGrammars = asyncHandler(async (req, res) => {
  *           400 INVALID_ID / 404 GRAMMAR_NOT_FOUND otherwise.
  */
 export const getGrammar = asyncHandler(async (req, res) => {
-  res.json(await grammarService.getGrammar(req.params.id));
+  res.json(await grammarService.getGrammar(req.user, req.params.id));
 });
 
 /**
@@ -48,7 +55,7 @@ export const getGrammar = asyncHandler(async (req, res) => {
  *           400 GRAMMAR_INVALID with the finding list otherwise.
  */
 export const createGrammar = asyncHandler(async (req, res) => {
-  const doc = await grammarService.createGrammar(grammarFromBody(req.body));
+  const doc = await grammarService.createGrammar(req.user, grammarFromBody(req.body));
   res.status(201).json(doc);
 });
 
@@ -59,7 +66,7 @@ export const createGrammar = asyncHandler(async (req, res) => {
  * Response: 200 updated document / 400 / 404.
  */
 export const updateGrammar = asyncHandler(async (req, res) => {
-  res.json(await grammarService.updateGrammar(req.params.id, grammarFromBody(req.body)));
+  res.json(await grammarService.updateGrammar(req.user, req.params.id, grammarFromBody(req.body)));
 });
 
 /**
@@ -67,7 +74,7 @@ export const updateGrammar = asyncHandler(async (req, res) => {
  * Response: 204 (no body — hence .end(), not .json()) / 400 / 404.
  */
 export const deleteGrammar = asyncHandler(async (req, res) => {
-  await grammarService.deleteGrammar(req.params.id);
+  await grammarService.deleteGrammar(req.user, req.params.id);
   res.status(204).end();
 });
 

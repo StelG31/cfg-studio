@@ -32,9 +32,33 @@ export class HttpError extends Error {
     return new HttpError(400, code, message, details);
   }
 
+  /**
+   * 401 — the caller has not proved who they are. Distinct from 403: the
+   * remedy is to sign in, so the client shows the login screen rather than
+   * telling the user they are not allowed.
+   */
+  static unauthorized(code, message, details) {
+    return new HttpError(401, code, message, details);
+  }
+
+  /**
+   * 403 — the caller is authenticated but the action is outside their
+   * jurisdiction. Only ever used for targets the caller is allowed to SEE;
+   * anything else is a 404, so that a probe cannot map out resources it has
+   * no business knowing exist.
+   */
+  static forbidden(code, message, details) {
+    return new HttpError(403, code, message, details);
+  }
+
   /** 404 — the requested resource does not exist. */
   static notFound(code, message, details) {
     return new HttpError(404, code, message, details);
+  }
+
+  /** 409 — the request collides with existing state (e.g. a taken username). */
+  static conflict(code, message, details) {
+    return new HttpError(409, code, message, details);
   }
 
   /**

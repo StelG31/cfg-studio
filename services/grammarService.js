@@ -12,6 +12,16 @@
  *       server keeps only grammars that algorithms can actually run on.
  *     - names are trimmed and capped, ids are shape-checked before any
  *       filesystem access.
+ *     - every operation is authorized against the signed-in user, which is
+ *       why each one takes `actor` as its first argument. The decision itself
+ *       is never made here: it is delegated to canAccess() in
+ *       services/userService.js, the single authorization function.
+ *
+ *   Who may see what:
+ *     a student sees only their own grammars; a teacher additionally sees —
+ *     but cannot modify — everything their own students saved; an admin sees
+ *     everything. Read and write are asymmetric on purpose: a student's work
+ *     stays theirs, which is the point of showing it to a teacher at all.
  *
  *   Sample grammars (data/samples.json) are read-only: they ship with the
  *   application, are loaded once and served from memory.
@@ -24,6 +34,7 @@ import { fileURLToPath } from 'node:url';
 import * as store from '../models/grammarStore.js';
 import { validateGrammar } from '../core/validator.js';
 import { parseGrammarPayload } from './computeService.js';
+import { canAccess, scopeFor } from './userService.js';
 import { HttpError } from '../utils/httpError.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -80,61 +91,117 @@ function requireId(id) {
   return id;
 }
 
+/** The answer for "absent" AND for "exists, but not yours to know about". */
+function notFound() {
+  return HttpError.notFound('GRAMMAR_NOT_FOUND', 'No saved grammar exists with this id.');
+}
+
+/**
+ * Fetch a grammar and settle, once, whether the actor may know it exists.
+ *
+ * The 404-before-403 rule lives here rather than in each caller: a grammar
+ * the actor cannot READ is reported exactly as an absent one, so the two
+ * cases are indistinguishable and a probe cannot discover which grammar ids
+ * are real. Only for a grammar they can see does a refusal admit to being a
+ * refusal.
+ *
+ * @param {object} actor The signed-in user.
+ * @param {string} id Document id from the URL.
+ * @returns {Promise<{document: object, target: {ownerId: string, ownerTeacherId: string|null}}>}
+ * @throws {HttpError} 400 INVALID_ID | 404 GRAMMAR_NOT_FOUND.
+ */
+async function requireReadableGrammar(actor, id) {
+  const found = await store.get(requireId(id));
+  if (found === null) throw notFound();
+
+  const target = { ownerId: found.owner.id, ownerTeacherId: found.owner.teacherId };
+  if (!canAccess(actor, 'grammar:read', target)) throw notFound();
+
+  return { document: found.document, target };
+}
+
+/**
+ * The owner predicate the store applies as a second lock on a write. An admin
+ * may write any row, so they are given no predicate; everyone else may only
+ * write their own, which is exactly what canAccess just agreed to.
+ */
+function writeGuard(actor) {
+  return actor.role === 'admin' ? {} : { ownerId: actor.id };
+}
+
 /* ------------------------------------------------------------------------ */
 /* Stored grammars                                                           */
 /* ------------------------------------------------------------------------ */
 
-/** @returns {Promise<object[]>} stored-grammar metadata, newest first. */
-export async function listGrammars() {
-  return store.list();
+/**
+ * @param {object} actor The signed-in user.
+ * @returns {Promise<object[]>} metadata for the grammars within the actor's
+ *          jurisdiction, newest first.
+ */
+export async function listGrammars(actor) {
+  return store.list(scopeFor(actor, 'grammar:read'));
 }
 
 /**
+ * @param {object} actor The signed-in user.
  * @param {string} id Document id from the URL.
  * @returns {Promise<object>} the full stored document.
  * @throws {HttpError} 400 INVALID_ID | 404 GRAMMAR_NOT_FOUND.
  */
-export async function getGrammar(id) {
-  const doc = await store.get(requireId(id));
-  if (doc === null) {
-    throw HttpError.notFound('GRAMMAR_NOT_FOUND', 'No saved grammar exists with this id.');
-  }
-  return doc;
+export async function getGrammar(actor, id) {
+  const { document } = await requireReadableGrammar(actor, id);
+  return document;
 }
 
 /**
+ * @param {object} actor The signed-in user, who becomes the owner.
  * @param {*} payload Grammar payload; must pass the shared validator.
  * @returns {Promise<object>} the stored document (id + timestamps added).
- * @throws {HttpError} 400 GRAMMAR_INVALID and the parse-stage 400s.
+ * @throws {HttpError} 400 GRAMMAR_INVALID and the parse-stage 400s | 403.
  */
-export async function createGrammar(payload) {
-  return store.create(requireValidGrammar(payload));
+export async function createGrammar(actor, payload) {
+  if (!canAccess(actor, 'grammar:create')) {
+    throw HttpError.forbidden('FORBIDDEN', 'You are not allowed to save grammars.');
+  }
+  return store.create(requireValidGrammar(payload), actor.id);
 }
 
 /**
+ * @param {object} actor The signed-in user.
  * @param {string} id Existing document id.
  * @param {*} payload Replacement grammar; same validation as create.
  * @returns {Promise<object>} the updated document (updatedAt bumped).
- * @throws {HttpError} 400 | 404 GRAMMAR_NOT_FOUND.
+ * @throws {HttpError} 400 | 403 FORBIDDEN | 404 GRAMMAR_NOT_FOUND.
  */
-export async function updateGrammar(id, payload) {
-  const doc = await store.update(requireId(id), requireValidGrammar(payload));
-  if (doc === null) {
-    throw HttpError.notFound('GRAMMAR_NOT_FOUND', 'No saved grammar exists with this id.');
+export async function updateGrammar(actor, id, payload) {
+  const { target } = await requireReadableGrammar(actor, id);
+
+  // Reached only for a grammar the actor can see, so 403 gives nothing away —
+  // and telling a teacher "this is your student's, you may read it but not
+  // change it" is far more useful than pretending it does not exist.
+  if (!canAccess(actor, 'grammar:update', target)) {
+    throw HttpError.forbidden('FORBIDDEN', 'You are not allowed to modify this grammar.');
   }
+
+  const doc = await store.update(id, requireValidGrammar(payload), writeGuard(actor));
+  if (doc === null) throw notFound();
   return doc;
 }
 
 /**
+ * @param {object} actor The signed-in user.
  * @param {string} id Document id to delete.
  * @returns {Promise<void>} resolves on success (controller answers 204).
- * @throws {HttpError} 400 INVALID_ID | 404 GRAMMAR_NOT_FOUND.
+ * @throws {HttpError} 400 INVALID_ID | 403 FORBIDDEN | 404 GRAMMAR_NOT_FOUND.
  */
-export async function deleteGrammar(id) {
-  const removed = await store.remove(requireId(id));
-  if (!removed) {
-    throw HttpError.notFound('GRAMMAR_NOT_FOUND', 'No saved grammar exists with this id.');
+export async function deleteGrammar(actor, id) {
+  const { target } = await requireReadableGrammar(actor, id);
+
+  if (!canAccess(actor, 'grammar:delete', target)) {
+    throw HttpError.forbidden('FORBIDDEN', 'You are not allowed to delete this grammar.');
   }
+
+  if (!(await store.remove(id, writeGuard(actor)))) throw notFound();
 }
 
 /* ------------------------------------------------------------------------ */

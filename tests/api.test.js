@@ -1,20 +1,27 @@
-/**
+﻿/**
  * tests/api.test.js
  * ---------------------------------------------------------------------------
  * HTTP-level tests for the Express API using supertest (no sockets — the
  * app object is exercised in-process). Persistence runs against the
  * throw-away PostgreSQL schema that tests/setup/globalSetup.js created and
  * migrated, so tests never touch development data.
+ *
+ * Grammar endpoints require a session since the accounts phase, so the CRUD
+ * tests below run through `agent` — a supertest client that keeps the login
+ * cookie. The compute and examples endpoints are used WITHOUT it on purpose:
+ * they are open to anonymous callers, and these tests are what says so.
  */
 
 import request from 'supertest';
 
 import { anbn, arithmetic } from './fixtures/grammars.js';
+import { TEST_ADMIN } from './setup/testDb.js';
 import { validateGrammar } from '../core/validator.js';
 import { createGrammar } from '../core/grammar.js';
 
 let app;
 let db;
+let agent;
 
 beforeAll(async () => {
   // DATABASE_URL already points at the test schema. The import below must
@@ -25,6 +32,12 @@ beforeAll(async () => {
   // The same module instance the app uses — Jest keeps one module registry
   // per test file.
   db = await import('../models/db.js');
+
+  agent = request.agent(app);
+  const signIn = await agent
+    .post('/api/auth/login')
+    .send({ username: TEST_ADMIN.username, password: TEST_ADMIN.password });
+  expect(signIn.status).toBe(200);
 });
 
 afterAll(async () => {
@@ -36,7 +49,7 @@ describe('grammar CRUD round-trip', () => {
   let createdId;
 
   test('POST /api/grammars persists a valid grammar', async () => {
-    const response = await request(app).post('/api/grammars').send({ grammar: anbn() });
+    const response = await agent.post('/api/grammars').send({ grammar: anbn() });
     expect(response.status).toBe(201);
     expect(response.body.id).toMatch(/^[a-f0-9-]{36}$/i);
     expect(response.body.createdAt).toBeDefined();
@@ -45,7 +58,7 @@ describe('grammar CRUD round-trip', () => {
   });
 
   test('GET /api/grammars lists the stored grammar as metadata', async () => {
-    const response = await request(app).get('/api/grammars');
+    const response = await agent.get('/api/grammars');
     expect(response.status).toBe(200);
     const entry = response.body.find((doc) => doc.id === createdId);
     expect(entry).toBeDefined();
@@ -54,16 +67,14 @@ describe('grammar CRUD round-trip', () => {
   });
 
   test('GET /api/grammars/:id returns the full document', async () => {
-    const response = await request(app).get(`/api/grammars/${createdId}`);
+    const response = await agent.get(`/api/grammars/${createdId}`);
     expect(response.status).toBe(200);
     expect(response.body.productions).toHaveLength(2);
   });
 
   test('PUT /api/grammars/:id replaces the content and bumps updatedAt', async () => {
     const changed = { ...arithmetic(), name: 'Renamed grammar' };
-    const response = await request(app)
-      .put(`/api/grammars/${createdId}`)
-      .send({ grammar: changed });
+    const response = await agent.put(`/api/grammars/${createdId}`).send({ grammar: changed });
     expect(response.status).toBe(200);
     expect(response.body.name).toBe('Renamed grammar');
     expect(response.body.id).toBe(createdId); // id survives updates
@@ -71,9 +82,9 @@ describe('grammar CRUD round-trip', () => {
   });
 
   test('DELETE /api/grammars/:id removes the document', async () => {
-    const del = await request(app).delete(`/api/grammars/${createdId}`);
+    const del = await agent.delete(`/api/grammars/${createdId}`);
     expect(del.status).toBe(204);
-    const gone = await request(app).get(`/api/grammars/${createdId}`);
+    const gone = await agent.get(`/api/grammars/${createdId}`);
     expect(gone.status).toBe(404);
     expect(gone.body.error.code).toBe('GRAMMAR_NOT_FOUND');
   });
@@ -87,20 +98,20 @@ describe('persistence guards', () => {
       startSymbol: 'Q', // undeclared start symbol
       productions: [{ left: 'S', right: ['a'] }],
     });
-    const response = await request(app).post('/api/grammars').send({ grammar: broken });
+    const response = await agent.post('/api/grammars').send({ grammar: broken });
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('GRAMMAR_INVALID');
     expect(response.body.error.details.errors.map((e) => e.code)).toContain('START_NOT_DECLARED');
   });
 
   test('structurally malformed payloads are rejected', async () => {
-    const response = await request(app).post('/api/grammars').send({ grammar: { variables: 'S' } });
+    const response = await agent.post('/api/grammars').send({ grammar: { variables: 'S' } });
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('INVALID_GRAMMAR_FORMAT');
   });
 
   test('ill-formatted ids are rejected before touching the filesystem', async () => {
-    const response = await request(app).get('/api/grammars/not-a-uuid');
+    const response = await agent.get('/api/grammars/not-a-uuid');
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('INVALID_ID');
   });

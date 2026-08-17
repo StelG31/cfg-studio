@@ -47,12 +47,23 @@ export function init() {
 /**
  * Make `grammar` the working grammar. Replaces the editor draft: loading is
  * an explicit user decision, so the previous draft has been superseded.
+ *
+ * Passing id: null for a grammar somebody else owns is what makes a teacher's
+ * access to a student's work genuinely read-only. The editor treats a null id
+ * as an unsaved draft, so Save creates the teacher's OWN copy instead of
+ * attempting to overwrite the student's — which the server would refuse with
+ * a 403 anyway. The student's work is opened, studied, never altered.
  */
 function loadIntoEditor(grammar, { id = null, sourceLabel }) {
   clearDraft();
   setGrammar(createGrammar(grammar), { id });
   navigateTo('editor');
   showToast(`Loaded ${sourceLabel}.`, 'success');
+}
+
+/** True when the signed-in user owns this document. */
+function isOwn(doc) {
+  return doc.ownerId === undefined || doc.ownerId === state.user?.id;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -89,11 +100,21 @@ function renderSaved(list) {
   els.savedList.innerHTML = `
     <ul class="list-group list-group-flush saved-grammar-list">
       ${list
-        .map(
-          (doc) => `
+        .map((doc) => {
+          const own = isOwn(doc);
+          return `
         <li class="list-group-item px-0 d-flex justify-content-between align-items-start gap-2 flex-wrap">
           <div class="me-auto">
-            <div class="fw-semibold">${escapeHtml(doc.name)}</div>
+            <div class="fw-semibold">
+              ${escapeHtml(doc.name)}
+              ${
+                own
+                  ? ''
+                  : `<span class="badge text-bg-light ms-1" title="You can open and study this grammar, but only its owner can change it">
+                       <i class="bi bi-eye" aria-hidden="true"></i> ${escapeHtml(doc.ownerUsername ?? 'another user')}
+                     </span>`
+              }
+            </div>
             ${doc.description ? `<div class="small text-secondary">${escapeHtml(doc.description)}</div>` : ''}
             <div class="small text-secondary">
               |V| = ${doc.variableCount} · |Σ| = ${doc.terminalCount} · |P| = ${doc.productionCount}
@@ -102,19 +123,25 @@ function renderSaved(list) {
           </div>
           <div class="btn-group btn-group-sm" role="group" aria-label="Actions for ${escapeHtml(doc.name)}">
             <button type="button" class="btn btn-outline-primary" data-action="load" data-id="${doc.id}">
-              <i class="bi bi-box-arrow-in-left" aria-hidden="true"></i> Load
+              <i class="bi bi-box-arrow-in-left" aria-hidden="true"></i> ${own ? 'Load' : 'View'}
             </button>
             <button type="button" class="btn btn-outline-secondary" data-action="export" data-id="${doc.id}"
                     title="Download as JSON">
               <i class="bi bi-download" aria-hidden="true"></i>
             </button>
-            <button type="button" class="btn btn-outline-danger" data-action="delete" data-id="${doc.id}"
+            ${
+              // Someone else's grammar is not yours to delete; the server
+              // agrees, so the button is simply not offered.
+              own
+                ? `<button type="button" class="btn btn-outline-danger" data-action="delete" data-id="${doc.id}"
                     data-name="${escapeHtml(doc.name)}" title="Delete">
               <i class="bi bi-trash" aria-hidden="true"></i>
-            </button>
+            </button>`
+                : ''
+            }
           </div>
-        </li>`
-        )
+        </li>`;
+        })
         .join('')}
     </ul>`;
 
@@ -139,7 +166,15 @@ async function onSavedAction(button) {
     setLoading(true, 'Loading grammar…');
     try {
       const doc = await api.getGrammar(id);
-      loadIntoEditor(doc, { id: doc.id, sourceLabel: `"${doc.name}"` });
+      const own = isOwn(doc);
+      loadIntoEditor(doc, { id: own ? doc.id : null, sourceLabel: `"${doc.name}"` });
+      if (!own) {
+        showToast(
+          `This grammar belongs to ${doc.ownerUsername ?? 'another user'}. Saving will create your own copy.`,
+          'info',
+          7000
+        );
+      }
     } catch (err) {
       showToast(err.message, 'danger');
     } finally {

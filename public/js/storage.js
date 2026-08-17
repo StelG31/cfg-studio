@@ -61,6 +61,12 @@ export function clearDraft() {
  * err.details, err.status), making the client and server error models
  * symmetric — one mental model on both sides of the wire.
  *
+ * The session cookie is httpOnly, so this module never sees it — it only has
+ * to make sure the browser attaches it. `same-origin` is already the default
+ * in current browsers; it is written out because a silently-dropped cookie
+ * fails as "you are not signed in", which sends the reader looking in exactly
+ * the wrong place.
+ *
  * @param {string} path    API path, e.g. '/api/grammars'.
  * @param {object} [options] fetch() options (method, body, ...).
  * @returns {Promise<*>} parsed JSON body, or null for 204 responses.
@@ -68,6 +74,7 @@ export function clearDraft() {
  */
 async function apiFetch(path, options = {}) {
   const response = await fetch(path, {
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
@@ -87,6 +94,15 @@ async function apiFetch(path, options = {}) {
     error.code = body?.error?.code;
     error.details = body?.error?.details;
     error.status = response.status;
+
+    // A session that has expired or been revoked can surface on ANY call, so
+    // it is handled once here rather than in every view's catch block. The
+    // listener lives in app.js; storage.js stays a transport module and knows
+    // nothing about screens.
+    if (response.status === 401 && path !== '/api/auth/login') {
+      window.dispatchEvent(new CustomEvent('session-lost'));
+    }
+
     throw error;
   }
 
@@ -94,6 +110,45 @@ async function apiFetch(path, options = {}) {
 }
 
 export const api = {
+  /* --- Authentication --------------------------------------------------- */
+
+  /** POST /api/auth/login → the signed-in user (and an httpOnly cookie) */
+  login: (username, password) =>
+    apiFetch('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  /** POST /api/auth/logout */
+  logout: () => apiFetch('/api/auth/logout', { method: 'POST' }),
+  /** GET /api/auth/me → the signed-in user; throws 401 when there is none */
+  me: () => apiFetch('/api/auth/me'),
+  /** POST /api/auth/password → change your own password */
+  changePassword: (currentPassword, newPassword) =>
+    apiFetch('/api/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+
+  /* --- User management --------------------------------------------------- */
+
+  /** GET /api/users → the users within the caller's jurisdiction */
+  listUsers: () => apiFetch('/api/users'),
+  /** POST /api/users → the created user */
+  createUser: (user) =>
+    apiFetch('/api/users', { method: 'POST', body: JSON.stringify(user) }),
+  /** DELETE /api/users/:id */
+  deleteUser: (id) => apiFetch(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  /** POST /api/users/:id/password → reset someone else's password */
+  resetPassword: (id, newPassword) =>
+    apiFetch(`/api/users/${encodeURIComponent(id)}/password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
+    }),
+  /** GET /api/users/password-suggestion → { password } generated server-side */
+  suggestPassword: () => apiFetch('/api/users/password-suggestion'),
+
+  /* --- Grammars ---------------------------------------------------------- */
+
   /** GET /api/grammars → metadata list */
   listGrammars: () => apiFetch('/api/grammars'),
   /** GET /api/grammars/:id → full document */

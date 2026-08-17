@@ -28,7 +28,9 @@
         <span class="navbar-toggler-icon"></span>
       </button>
 
-      <div class="collapse navbar-collapse" id="mainNav">
+      <!-- Everything between here and the closing </div> is hidden until
+           someone is signed in — body.signed-in is toggled by app.js. -->
+      <div class="collapse navbar-collapse signed-in-only" id="mainNav">
         <ul class="navbar-nav me-auto">
           <li class="nav-item">
             <a class="nav-link" href="#editor" data-section-link="editor">
@@ -55,6 +57,12 @@
               <i class="bi bi-folder2-open" aria-hidden="true"></i> My Grammars
             </a>
           </li>
+          <!-- Shown only to admins and teachers; app.js toggles d-none. -->
+          <li class="nav-item d-none" id="navUsersItem">
+            <a class="nav-link" href="#users" data-section-link="users">
+              <i class="bi bi-people" aria-hidden="true"></i> Users
+            </a>
+          </li>
           <li class="nav-item">
             <a class="nav-link" href="#help" data-section-link="help">
               <i class="bi bi-question-circle" aria-hidden="true"></i> Help
@@ -69,12 +77,81 @@
           <span id="currentGrammarName">Untitled grammar</span>
           <span id="unsavedDot" class="unsaved-dot d-none" title="Unsaved changes"></span>
         </span>
+
+        <!-- Account menu: who is signed in, and how to stop being. -->
+        <div class="dropdown ms-lg-3">
+          <button class="btn btn-sm btn-outline-light dropdown-toggle d-flex align-items-center gap-2"
+                  type="button" id="accountMenu" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-person-circle" aria-hidden="true"></i>
+            <span id="currentUserName">—</span>
+            <span class="badge text-bg-light text-uppercase" id="currentUserRole"></span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="accountMenu">
+            <li>
+              <button class="dropdown-item" type="button" id="btnChangePassword">
+                <i class="bi bi-key me-2" aria-hidden="true"></i>Change password
+              </button>
+            </li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <button class="dropdown-item" type="button" id="btnLogout">
+                <i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>Log out
+              </button>
+            </li>
+          </ul>
+        </div>
       </div>
     </div>
   </nav>
 
   <!-- ======================================================== Main content -->
   <main class="container-xxl py-4">
+
+    <!-- ————— Section: Sign in ————— -->
+    <!-- The only section reachable while nobody is signed in. There is no
+         registration form on purpose: accounts are created by the role above
+         (an admin makes teachers, a teacher makes students), so nobody can
+         create one for themselves on a public URL. -->
+    <section id="section-login" class="app-section" aria-labelledby="login-heading">
+      <div class="row justify-content-center">
+        <div class="col-sm-10 col-md-7 col-lg-5">
+          <div class="card mt-4 mt-lg-5">
+            <div class="card-body p-4">
+              <div class="text-center mb-4">
+                <i class="bi bi-diagram-3-fill fs-1 text-primary" aria-hidden="true"></i>
+                <h1 id="login-heading" class="h4 mt-2 mb-1">Sign in to CFG Studio</h1>
+                <p class="text-secondary small mb-0">
+                  Use the account your teacher or administrator gave you.
+                </p>
+              </div>
+
+              <form id="loginForm" novalidate>
+                <div class="mb-3">
+                  <label for="loginUsername" class="form-label">Username</label>
+                  <input type="text" class="form-control" id="loginUsername" name="username"
+                         autocomplete="username" autocapitalize="none" spellcheck="false" required>
+                </div>
+                <div class="mb-3">
+                  <label for="loginPassword" class="form-label">Password</label>
+                  <input type="password" class="form-control" id="loginPassword" name="password"
+                         autocomplete="current-password" required>
+                </div>
+
+                <div class="alert alert-danger py-2 d-none" id="loginError" role="alert"></div>
+
+                <button type="submit" class="btn btn-primary w-100" id="btnLogin">
+                  <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Sign in
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <p class="text-center text-secondary small mt-3 mb-0">
+            No account? Accounts are created by your teacher — there is no public sign-up.
+          </p>
+        </div>
+      </div>
+    </section>
 
     <!-- ————— Section: Grammar Editor ————— -->
     <section id="section-editor" class="app-section" aria-labelledby="editor-heading">
@@ -401,6 +478,101 @@
               </div>
               <div class="card-body" id="sampleGrammarsList">
                 <p class="text-secondary mb-0">Loading…</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ————— Section: User management ————— -->
+    <!-- Reachable by admins and teachers. The heading and the available
+         actions are written by users-view.js, because what this screen IS
+         differs by role: every account for an admin, one class for a teacher. -->
+    <section id="section-users" class="app-section" aria-labelledby="users-heading">
+      <header class="section-header">
+        <h1 id="users-heading" class="section-title">Users</h1>
+        <p class="section-subtitle" id="usersSubtitle">
+          Accounts you are responsible for.
+        </p>
+      </header>
+      <div id="users-root">
+        <div class="row g-4">
+
+          <!-- The account list -->
+          <div class="col-lg-7">
+            <div class="card">
+              <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <span><i class="bi bi-people me-2" aria-hidden="true"></i>Accounts</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshUsers"
+                        data-bs-toggle="tooltip" title="Reload the list">
+                  <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                </button>
+              </div>
+              <div class="card-body" id="usersList">
+                <p class="text-secondary mb-0">Loading…</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Create an account -->
+          <div class="col-lg-5">
+            <div class="card">
+              <div class="card-header">
+                <i class="bi bi-person-plus me-2" aria-hidden="true"></i>Create an account
+              </div>
+              <div class="card-body">
+                <form id="createUserForm" novalidate>
+                  <div class="mb-3">
+                    <label for="newUserRole" class="form-label">Role</label>
+                    <select class="form-select" id="newUserRole">
+                      <!-- Options are written by users-view.js: a teacher may
+                           only ever create students. -->
+                    </select>
+                  </div>
+
+                  <!-- Only an admin sees this: a teacher's students are
+                       always their own, so there is nothing to choose. -->
+                  <div class="mb-3 d-none" id="newUserTeacherGroup">
+                    <label for="newUserTeacher" class="form-label">Teacher</label>
+                    <select class="form-select" id="newUserTeacher"></select>
+                    <div class="form-text">Every student belongs to a teacher.</div>
+                  </div>
+
+                  <div class="mb-3">
+                    <label for="newUserName" class="form-label">Username</label>
+                    <input type="text" class="form-control" id="newUserName"
+                           autocapitalize="none" spellcheck="false" autocomplete="off"
+                           maxlength="32" placeholder="e.g. maria.p">
+                    <div class="form-text">
+                      3–32 characters: letters, digits, dots, hyphens or underscores.
+                      Stored in lower case.
+                    </div>
+                  </div>
+
+                  <div class="mb-3">
+                    <label for="newUserPassword" class="form-label">Password</label>
+                    <div class="input-group">
+                      <input type="text" class="form-control" id="newUserPassword"
+                             autocomplete="off" spellcheck="false" maxlength="200">
+                      <button class="btn btn-outline-secondary" type="button" id="btnSuggestPassword"
+                              data-bs-toggle="tooltip" title="Generate a password">
+                        <i class="bi bi-shuffle" aria-hidden="true"></i>
+                      </button>
+                    </div>
+                    <div class="form-text">
+                      Shown in plain text so you can pass it on — the account holder
+                      can change it once they sign in. At least 8 characters.
+                    </div>
+                  </div>
+
+                  <div class="alert alert-danger py-2 d-none" id="createUserError" role="alert"></div>
+
+                  <button type="submit" class="btn btn-primary w-100" id="btnCreateUser">
+                    <i class="bi bi-person-plus" aria-hidden="true"></i> Create account
+                  </button>
+                </form>
               </div>
             </div>
           </div>

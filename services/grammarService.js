@@ -117,7 +117,7 @@ async function requireReadableGrammar(actor, id) {
   const target = { ownerId: found.owner.id, ownerTeacherId: found.owner.teacherId };
   if (!canAccess(actor, 'grammar:read', target)) throw notFound();
 
-  return { document: found.document, target };
+  return { document: found.document, owner: found.owner, target };
 }
 
 /**
@@ -145,12 +145,16 @@ export async function listGrammars(actor) {
 /**
  * @param {object} actor The signed-in user.
  * @param {string} id Document id from the URL.
- * @returns {Promise<object>} the full stored document.
+ * @returns {Promise<object>} the full stored document, plus ownerUsername so
+ *          a teacher opening a student's grammar can be told whose it is.
+ *          (create and update do not carry it: there the owner is either the
+ *          caller or already known to them, and adding it would mean a join
+ *          on the write path for a label nothing reads.)
  * @throws {HttpError} 400 INVALID_ID | 404 GRAMMAR_NOT_FOUND.
  */
 export async function getGrammar(actor, id) {
-  const { document } = await requireReadableGrammar(actor, id);
-  return document;
+  const { document, owner } = await requireReadableGrammar(actor, id);
+  return { ...document, ownerUsername: owner.username };
 }
 
 /**

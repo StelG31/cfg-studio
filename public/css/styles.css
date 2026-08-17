@@ -178,6 +178,15 @@ a {
   margin-bottom: 0;
 }
 
+/* Until someone signs in there is nothing to navigate BETWEEN, so the whole
+   nav — links, current-grammar indicator, account menu — stays hidden and the
+   page is just the brand above the login card. app.js puts .signed-in on
+   <body>; the default (no class) is the signed-out state, so a failure to run
+   the script leaves the shell hidden rather than exposed. */
+body:not(.signed-in) .signed-in-only {
+  display: none !important;
+}
+
 /* ============================================ 5. Cards & shared components */
 .card {
   border-color: var(--cfg-border);

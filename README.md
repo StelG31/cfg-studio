@@ -18,6 +18,7 @@ CFG Studio follows the educational philosophy of classroom tools like **JFLAP**,
 - **Parse tree** — reconstructed from the CYK table's backpointers and rendered as clean SVG: centred tidy layout, pan by dragging, zoom with the wheel or buttons, fit-to-view, and standalone **SVG export**. The leftmost derivation encoded by the tree is listed alongside.
 - **Sample grammars** — Balanced Parentheses, aⁿbⁿ, Arithmetic Expressions, Simple Expression Grammar, Palindromes, Equal numbers of a's and b's — each with suggested accept/reject test strings, loadable with one click.
 - **Save / Load / Import / Export** — grammars persist server-side in PostgreSQL behind a REST API; any grammar can be exported to a JSON file and imported back.
+- **Accounts and roles** — an admin/teacher/student hierarchy with server-side sessions. Each account is created by the role above it (there is no public sign-up), students' grammars are private to them, and a teacher can read — but never alter — the work of their own students. See [User accounts and roles](#user-accounts-and-roles).
 - **Polished UX** — toast notifications, confirmation dialogs before destructive actions, loading indicators, tooltips, subtle animations, a Help section with conventions and theory summaries, and a fully responsive layout.
 
 ## Technologies
@@ -126,36 +127,80 @@ Because the run shares one schema, `npm test` cannot be run twice concurrently o
 │   └── parser.js            #   parse-tree reconstruction, leftmost derivation
 ├── routes/                  # API route tables
 ├── controllers/             # thin HTTP request/response handling
+├── middleware/              # requireAuth (cookie → req.user), requireRole
 ├── services/                # business rules (validate-before-save, size guards)
+│   ├── userService.js       #   ★ canAccess() — the single authorization decision
+│   └── authService.js       #   login/logout, session tokens, password change
 ├── models/                  # the only layer that touches persistence
 │   ├── db.js                #   PostgreSQL pool (lazy, TLS from the URL, retry-once)
 │   ├── schema.sql           #   users / grammars / sessions, idempotent DDL
 │   ├── migrate.js           #   applies the schema + bootstraps the first admin
-│   └── grammarStore.js      #   grammar CRUD
-├── utils/                   # HttpError, asyncHandler, scrypt password hashing
+│   ├── grammarStore.js      #   grammar CRUD, filtered by owner
+│   ├── userStore.js         #   account CRUD
+│   └── sessionStore.js      #   sessions keyed by sha256(token)
+├── utils/                   # HttpError, asyncHandler, scrypt hashing, session cookie
 ├── data/samples.json        # built-in sample grammars (read-only)
 ├── views/index.html         # the single-page UI (+ 404 page)
 ├── public/
 │   ├── css/styles.css       # academic theme on top of Bootstrap
 │   └── js/                  # app shell, view modules, SVG tree renderer, step player
 ├── docs/algorithms.md       # theory, pseudo-code, complexity for every algorithm
-└── tests/                   # 6 Jest suites, 159 tests, shared fixtures
+└── tests/                   # 9 Jest suites, 414 tests, shared fixtures
 ```
+
+## User accounts and roles
+
+```
+admin  ──creates──▶  teacher  ──creates──▶  student
+```
+
+**There is no registration page.** An account only ever comes into existence from the role above it, which guarantees that no student exists without a teacher and that nobody can create an account on a public URL. The first administrator is created from `ADMIN_USERNAME` / `ADMIN_PASSWORD` on startup; everyone else is created through the **Users** screen.
+
+| Action | admin | teacher | student |
+|---|---|---|---|
+| Create teacher | yes | no | no |
+| Create student | yes | yes (own) | no |
+| Delete user / reset password | yes | own students only | no |
+| List users | all | own students only | no |
+| Create grammar / use algorithms | yes | yes | yes |
+| Read grammar | all | own + own students' | own |
+| Update / delete grammar | all | own only | own |
+
+Everyone can change their own password.
+
+Two implementation notes that matter more than the table:
+
+- **One authorization function.** With three roles the question is no longer "is this mine?" but "is this within my jurisdiction?" — a relation between two users. It is answered in exactly one place, `canAccess(actor, action, target)` in `services/userService.js`: pure, synchronous, and failing closed on an unknown action or role. `tests/authorization.test.js` walks the whole matrix. Scattering role checks across controllers would mean one forgotten check is a silent hole.
+- **A target you cannot read is reported as absent, not forbidden.** 404 comes before 403, so probing the API cannot map out which grammar ids or usernames exist. A 403 is only ever returned for something the caller can already see — a teacher told "this is your student's, you may read it but not change it".
+
+Sessions are rows in the `sessions` table, not self-contained tokens: logging out, deleting a user and resetting a password all take effect on the next request, because the row is gone. Only `sha256(token)` is stored — never the token itself — and a `CHECK` constraint on the column enforces it.
 
 ## REST API
 
+Endpoints marked ● require a session cookie.
+
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/grammars` | list saved grammars (metadata) |
-| POST | `/api/grammars` | save a grammar (validated server-side) |
-| GET | `/api/grammars/:id` | fetch one grammar |
-| PUT | `/api/grammars/:id` | update a grammar |
-| DELETE | `/api/grammars/:id` | delete a grammar |
+| POST | `/api/auth/login` | sign in; sets an httpOnly session cookie |
+| POST | `/api/auth/logout` | ● sign out (deletes the session row) |
+| GET | `/api/auth/me` | ● the signed-in user |
+| POST | `/api/auth/password` | ● change your own password |
+| GET | `/api/users` | ● list users within your jurisdiction |
+| POST | `/api/users` | ● create a teacher or student |
+| DELETE | `/api/users/:id` | ● delete a user |
+| POST | `/api/users/:id/password` | ● reset someone's password |
+| GET | `/api/grammars` | ● list saved grammars (metadata) |
+| POST | `/api/grammars` | ● save a grammar (validated server-side) |
+| GET | `/api/grammars/:id` | ● fetch one grammar |
+| PUT | `/api/grammars/:id` | ● update a grammar |
+| DELETE | `/api/grammars/:id` | ● delete a grammar |
 | GET | `/api/examples` | built-in sample grammars |
 | POST | `/api/validate` | validate a grammar payload |
 | POST | `/api/cnf` | CNF conversion with the full step trace |
 | POST | `/api/cyk` | run CYK: `{ grammar, input }` → table + trace + verdict |
 | GET | `/healthz` | health check |
+
+The four algorithm endpoints and `/api/examples` are deliberately open: they are stateless, already bounded by the size limits in `services/computeService.js`, hold no user data, and exist to be usable from a script. A session there would protect nothing.
 
 Errors always have the shape `{ "error": { "code", "message", "details?" } }` with stable machine-readable codes.
 
@@ -176,10 +221,12 @@ Full documentation — *theory, pseudo-code, complexity and implementation notes
 npm test
 ```
 
-Six suites, **159 tests**, covering the grammar model, the validator (asserted by stable error codes), every CNF stage plus the full pipeline, CYK, parse trees and the HTTP API (supertest against a temporary data directory). Two test strategies deserve mention:
+Nine suites, **414 tests**, covering the grammar model, the validator (asserted by stable error codes), every CNF stage plus the full pipeline, CYK, the Earley parser, parse trees, authentication, authorization and the HTTP API (supertest against a throw-away PostgreSQL schema). Four test strategies deserve mention:
 
 - **Language preservation:** a brute-force derivation enumerator (`tests/helpers.js`) proves L(G) = L(CNF(G)) for all strings up to a length bound on several grammars.
 - **Exhaustive agreement:** CYK's verdict is compared against the enumerated language for *every* string over {a, b} up to length 5.
+- **The permission matrix, exhaustively:** every (role, action, target) triple is asserted against `canAccess` as a plain table. A test that only exercises the endpoints someone remembered to write proves nothing about the combination they forgot.
+- **Scope equivalence:** the list queries are pinned to that policy empirically — rows owned by every fixture user are inserted, the real SQL runs, and the result must equal the set `canAccess` admits one row at a time. A `WHERE` clause that drifts wider than the policy fails.
 
 ## Screenshots
 

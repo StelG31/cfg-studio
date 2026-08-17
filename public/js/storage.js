@@ -99,7 +99,14 @@ async function apiFetch(path, options = {}) {
     // it is handled once here rather than in every view's catch block. The
     // listener lives in app.js; storage.js stays a transport module and knows
     // nothing about screens.
-    if (response.status === 401 && path !== '/api/auth/login') {
+    //
+    // Login and logout are excluded because a 401 is not news on either: on
+    // login it is a wrong password, and on logout it means the session was
+    // already gone — which is what the caller wanted anyway. Announcing it
+    // there would put a "your session has ended" toast on top of a perfectly
+    // ordinary sign-out.
+    const expected401 = path === '/api/auth/login' || path === '/api/auth/logout';
+    if (response.status === 401 && !expected401) {
       window.dispatchEvent(new CustomEvent('session-lost'));
     }
 

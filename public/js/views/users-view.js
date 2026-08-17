@@ -230,7 +230,10 @@ function render(users) {
     return;
   }
 
-  /** Nobody may delete themselves, so the button is not offered. */
+  // Resolves teacher_id to a name for the "teacher: …" line. Only an admin's
+  // list contains teachers at all; a teacher's list is their own students, so
+  // the lookup misses and the line is simply omitted — which is right, since
+  // that teacher is the reader.
   const teacherNames = new Map(users.map((user) => [user.id, user.username]));
 
   els.list.innerHTML = `
@@ -253,15 +256,21 @@ function render(users) {
             </div>
           </div>
           <div class="btn-group btn-group-sm" role="group" aria-label="Actions for ${escapeHtml(user.username)}">
-            <button type="button" class="btn btn-outline-secondary" data-action="reset"
+            ${
+              // Neither action is offered on your own row. Delete, because
+              // canAccess refuses it outright. Reset, because it would work —
+              // and would sign you out on the spot, since a reset drops every
+              // session of the account it touches. "Change password" in the
+              // account menu is the way to change your own, and it keeps you
+              // signed in here.
+              isSelf
+                ? '<span class="text-secondary small fst-italic px-2">your account</span>'
+                : `<button type="button" class="btn btn-outline-secondary" data-action="reset"
                     data-id="${escapeHtml(user.id)}" data-name="${escapeHtml(user.username)}"
                     data-bs-toggle="tooltip" title="Set a new password">
               <i class="bi bi-key" aria-hidden="true"></i>
             </button>
-            ${
-              isSelf
-                ? ''
-                : `<button type="button" class="btn btn-outline-danger" data-action="delete"
+            <button type="button" class="btn btn-outline-danger" data-action="delete"
                     data-id="${escapeHtml(user.id)}" data-name="${escapeHtml(user.username)}"
                     data-role-name="${escapeHtml(user.role)}"
                     data-bs-toggle="tooltip" title="Delete this account">

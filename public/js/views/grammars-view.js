@@ -36,7 +36,19 @@ export function init() {
     if (event.detail?.name === 'grammars') refreshSaved();
   });
 
-  refreshSaved();
+  // Drop the rendered list the moment the signed-in user changes, and only
+  // then re-fetch. The list names other people's work, so the previous
+  // account's grammars must not still be on screen for the next one — not
+  // even for the moment between this section becoming visible and its
+  // re-fetch returning.
+  events.addEventListener('user-changed', () => {
+    els.savedList.innerHTML = '';
+    if (state.user !== null) refreshSaved();
+  });
+
+  // Nothing to fetch until somebody is signed in; the request would only 401.
+  // The samples are public, so they load either way.
+  if (state.user !== null) refreshSaved();
   renderSamples();
 }
 
@@ -53,10 +65,13 @@ export function init() {
  * as an unsaved draft, so Save creates the teacher's OWN copy instead of
  * attempting to overwrite the student's — which the server would refuse with
  * a 403 anyway. The student's work is opened, studied, never altered.
+ *
+ * borrowedFrom carries the owner's name past that deliberate loss of id, so
+ * the editor can say whose original it left alone when the copy is saved.
  */
-function loadIntoEditor(grammar, { id = null, sourceLabel }) {
+function loadIntoEditor(grammar, { id = null, borrowedFrom = null, sourceLabel }) {
   clearDraft();
-  setGrammar(createGrammar(grammar), { id });
+  setGrammar(createGrammar(grammar), { id, borrowedFrom });
   navigateTo('editor');
   showToast(`Loaded ${sourceLabel}.`, 'success');
 }
@@ -167,10 +182,17 @@ async function onSavedAction(button) {
     try {
       const doc = await api.getGrammar(id);
       const own = isOwn(doc);
-      loadIntoEditor(doc, { id: own ? doc.id : null, sourceLabel: `"${doc.name}"` });
+      const owner = doc.ownerUsername ?? 'another user';
+
+      loadIntoEditor(doc, {
+        id: own ? doc.id : null,
+        borrowedFrom: own ? null : owner,
+        sourceLabel: `"${doc.name}"`,
+      });
+
       if (!own) {
         showToast(
-          `This grammar belongs to ${doc.ownerUsername ?? 'another user'}. Saving will create your own copy.`,
+          `This grammar belongs to ${owner}. Saving will create your own copy.`,
           'info',
           7000
         );

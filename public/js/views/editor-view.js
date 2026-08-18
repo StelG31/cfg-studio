@@ -251,6 +251,10 @@ function applyDraft(draft) {
   if (rows.length === 0) rows.push({ left: '', rhsText: '', errors: [] });
 
   state.grammarId = draft.grammarId ?? null;
+  // Restored alongside the id: a reload must not turn a borrowed grammar into
+  // one of unknown origin, or the copy-on-save would go unexplained exactly
+  // when the reader has lost the context that would have explained it.
+  state.borrowedFrom = draft.borrowedFrom ?? null;
 
   refreshSymbolSelects();
   els.start.value = draft.startSymbol ?? '';
@@ -585,6 +589,10 @@ async function saveGrammar() {
     return;
   }
 
+  // Read before saving: markGrammarSaved() clears it, and this is the one
+  // moment the fact is worth reporting.
+  const borrowedFrom = state.borrowedFrom;
+
   setLoading(true, 'Saving grammar…');
   try {
     if (state.grammarId) {
@@ -593,7 +601,16 @@ async function saveGrammar() {
     } else {
       const doc = await api.createGrammar(grammar);
       markGrammarSaved(doc.id);
-      showToast(`Saved "${grammar.name}".`, 'success');
+      // A copy-on-save is silent otherwise: the grammar came from somebody
+      // else's list, so "Saved" alone would leave the reader unsure whether
+      // they had just written over it.
+      showToast(
+        borrowedFrom
+          ? `Saved as your own copy — ${borrowedFrom}'s original was not modified.`
+          : `Saved "${grammar.name}".`,
+        'success',
+        borrowedFrom ? 7000 : undefined
+      );
     }
     markGrammarSaved(state.grammarId);
     scheduleDraftSave(); // persist the clean state (id + dirty=false)
@@ -624,6 +641,7 @@ function exportGrammar() {
  *     startSymbol,                  // current dropdown value
  *     rows: [{left, rhsText}],      // production lines, as typed
  *     grammarId,                    // server id if the grammar was saved
+ *     borrowedFrom,                 // owner it was opened from, if not ours
  *     dirty }                       // unsaved flag, restored verbatim
  */
 function scheduleDraftSave() {
@@ -637,6 +655,7 @@ function scheduleDraftSave() {
       startSymbol: els.start.value,
       rows: rows.map(({ left, rhsText }) => ({ left, rhsText })),
       grammarId: state.grammarId,
+      borrowedFrom: state.borrowedFrom,
       dirty: state.dirty,
     });
   }, 400);

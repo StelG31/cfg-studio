@@ -41,6 +41,17 @@ export const state = {
   grammar: null,
   /** Server-side id when the grammar has been saved; null for drafts. */
   grammarId: null,
+  /**
+   * The username the working grammar was opened FROM, when that was somebody
+   * else's document — a teacher studying a student's work. Null otherwise.
+   *
+   * It exists because grammarId is deliberately null in that case (which is
+   * what makes Save create your own copy rather than overwrite theirs), and
+   * that erases the one fact the editor would need to explain what it just
+   * did. Provenance and identity are different questions, so they get
+   * different fields.
+   */
+  borrowedFrom: null,
   /** True when the editor has changes not yet persisted. */
   dirty: false,
   /** Result of the last CNF conversion ({original, steps, result, ...}). */
@@ -117,11 +128,14 @@ export function setUser(user) {
  * grammar destroys them.
  *
  * @param {object} grammar The new working grammar.
- * @param {{id?: string|null}} [options] Server document id, if loaded from storage.
+ * @param {{id?: string|null, borrowedFrom?: string|null}} [options] Server
+ *        document id, if loaded from storage; and the username it was opened
+ *        from when that document belongs to somebody else.
  */
-export function setGrammar(grammar, { id = null } = {}) {
+export function setGrammar(grammar, { id = null, borrowedFrom = null } = {}) {
   state.grammar = grammar;
   state.grammarId = id;
+  state.borrowedFrom = borrowedFrom;
   state.dirty = false;
   state.cnf = null;
   state.cyk = null;
@@ -142,10 +156,15 @@ export function markGrammarEdited() {
 /**
  * Signal that the working grammar was persisted server-side.
  *
+ * Saving ends any borrowed provenance: the document on screen is now the
+ * caller's own copy, so a second Save must update it rather than announce a
+ * copy again.
+ *
  * @param {string|null} id The stored document's id (null clears the link).
  */
 export function markGrammarSaved(id) {
   state.grammarId = id;
+  state.borrowedFrom = null;
   state.dirty = false;
   updateGrammarIndicator();
 }

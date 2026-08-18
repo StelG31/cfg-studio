@@ -516,6 +516,66 @@ code {
   border-radius: 0.25rem;
 }
 
+/* ——— 6f. Engine choice, test strings, batch run ——— */
+
+/* The first radio group in the app. Each choice is a labelled block with a
+   consequence underneath, so it needs more room than a stock form-check. */
+.engine-choice {
+  padding: 0.5rem 0.5rem 0.5rem 2rem;
+  border-radius: 0.375rem;
+}
+.engine-choice + .engine-choice {
+  margin-top: 0.25rem;
+}
+.engine-choice:has(.form-check-input:checked) {
+  background-color: var(--cfg-primary-soft);
+}
+.engine-choice .form-check-label {
+  cursor: pointer;
+}
+.engine-choice .form-check-input:disabled ~ .form-check-label {
+  color: var(--cfg-muted);
+}
+
+/* Saved test strings, in the editor's management card. */
+.test-string-list .list-group-item {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+/* Batch results. Rows are clickable, so they must look it. */
+.batch-table tbody tr {
+  cursor: pointer;
+}
+.batch-table tbody tr:hover {
+  background-color: var(--cfg-primary-soft);
+}
+.batch-row-failed {
+  background-color: #fef3f2;
+}
+.batch-accepted,
+.batch-pass {
+  color: var(--cfg-accept);
+}
+.batch-rejected {
+  color: var(--cfg-muted);
+}
+.batch-fail {
+  color: var(--cfg-reject);
+}
+.batch-pass,
+.batch-fail {
+  font-weight: 700;
+}
+
+/* Engine comparison table in the simulator. */
+.compare-table th[scope='row'] {
+  font-weight: 600;
+}
+.compare-aside {
+  color: var(--cfg-muted);
+}
+
 /* ================================= 7. Footer, utilities, responsive tweaks */
 .app-footer {
   border-top: 1px solid var(--cfg-border);

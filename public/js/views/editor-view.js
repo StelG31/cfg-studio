@@ -55,6 +55,16 @@ import { symbolHtml, grammarHtml } from '../grammar-render.js';
  */
 let rows = [];
 
+/**
+ * The grammar's expected-outcome lists, held here for the same reason `rows`
+ * is: rebuildGrammar() reconstructs state.grammar from scratch on every
+ * keystroke, so anything the FORM does not hold has to be kept alongside it
+ * or it would be rebuilt away. See the warning in rebuildGrammar().
+ *
+ * @type {{accept: string[], reject: string[]}}
+ */
+let testStrings = { accept: [], reject: [] };
+
 /** Cached element references, filled once in init(). */
 const els = {};
 
@@ -115,6 +125,14 @@ export function init() {
     clearDraft();
     setGrammar(createEmptyGrammar());
     showToast('Started a new blank grammar.', 'info');
+  });
+
+  els.testStringInput = document.getElementById('testStringInput');
+  els.testStringsLists = document.getElementById('testStringsLists');
+  document.getElementById('btnAddAccept').addEventListener('click', () => addTestString('accept'));
+  document.getElementById('btnAddReject').addEventListener('click', () => addTestString('reject'));
+  els.testStringInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') addTestString('accept');
   });
 
   els.saveButton.addEventListener('click', saveGrammar);
@@ -190,6 +208,10 @@ function rebuildGrammar() {
     }
   }
 
+  // ⚠ testStrings MUST be passed through here. createGrammar rebuilds the
+  // object field by field, and this runs on every keystroke — omitting the
+  // field would quietly delete every saved test string the moment anyone
+  // typed a character in the editor.
   state.grammar = createGrammar({
     name: els.name.value,
     description: els.description.value,
@@ -197,6 +219,7 @@ function rebuildGrammar() {
     terminals,
     startSymbol: els.start.value,
     productions,
+    testStrings,
   });
 
   markGrammarEdited();
@@ -229,6 +252,13 @@ function grammarToRows(grammar) {
 /** Populate every form control from state.grammar (on load/import/new). */
 function fillFormFromGrammar() {
   const grammar = state.grammar;
+  // Copied, not aliased: the card edits these lists in place, and mutating
+  // state.grammar's own arrays would bypass rebuildGrammar() entirely.
+  testStrings = {
+    accept: [...(grammar.testStrings?.accept ?? [])],
+    reject: [...(grammar.testStrings?.reject ?? [])],
+  };
+  renderTestStrings();
   els.name.value = grammar.name === 'Untitled grammar' ? '' : grammar.name;
   els.description.value = grammar.description;
   els.variables.value = grammar.variables.join(' ');
@@ -248,6 +278,13 @@ function fillFormFromGrammar() {
 
 /** Restore the verbatim form snapshot saved as a draft. */
 function applyDraft(draft) {
+  // Restored BEFORE the rebuildGrammar() below, which reads this. A draft
+  // written by an older build simply has no such key.
+  testStrings = {
+    accept: [...(draft.testStrings?.accept ?? [])],
+    reject: [...(draft.testStrings?.reject ?? [])],
+  };
+  renderTestStrings();
   els.name.value = draft.name ?? '';
   els.description.value = draft.description ?? '';
   els.variables.value = draft.variablesText ?? '';
@@ -580,6 +617,103 @@ function renderValidation() {
 }
 
 /* ------------------------------------------------------------------------ */
+/* Test strings                                                              */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Repaint both lists. Rebuilt wholesale on every change, so the delegated
+ * listeners below never accumulate.
+ */
+function renderTestStrings() {
+  const listHtml = (kind, values, emptyText) => {
+    const badge = kind === 'accept' ? 'text-bg-success' : 'text-bg-danger';
+    const items = values
+      .map(
+        (value, index) => `
+        <li class="list-group-item px-0 d-flex justify-content-between align-items-center gap-2">
+          <code class="grammar-text">${escapeHtml(value === '' ? EPSILON : value)}</code>
+          <button type="button" class="btn btn-sm btn-outline-secondary border-0"
+                  data-test-action="remove" data-test-list="${kind}" data-test-index="${index}"
+                  aria-label="Remove this string">
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+          </button>
+        </li>`
+      )
+      .join('');
+    return `
+      <div class="mb-3">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <span class="badge ${badge}">${kind === 'accept' ? 'Should be accepted' : 'Should be rejected'}</span>
+          <span class="small text-secondary">${values.length}</span>
+        </div>
+        ${
+          values.length === 0
+            ? `<p class="small text-secondary mb-0">${emptyText}</p>`
+            : `<ul class="list-group list-group-flush test-string-list">${items}</ul>`
+        }
+      </div>`;
+  };
+
+  els.testStringsLists.innerHTML =
+    listHtml('accept', testStrings.accept, 'No strings yet.') +
+    listHtml('reject', testStrings.reject, 'No strings yet.');
+
+  for (const button of els.testStringsLists.querySelectorAll('[data-test-action]')) {
+    button.addEventListener('click', () => {
+      const list = button.dataset.testList;
+      testStrings[list].splice(Number(button.dataset.testIndex), 1);
+      renderTestStrings();
+      rebuildGrammar();
+    });
+  }
+}
+
+/**
+ * Add the box's contents to one of the lists.
+ *
+ * The checks here are courtesies that explain a mistake early — the server
+ * enforces the same rules again on save, because it never trusts the browser.
+ *
+ * @param {'accept'|'reject'} kind Which expectation the string belongs to.
+ */
+function addTestString(kind) {
+  // Trimmed like the simulator's own input: whitespace can never be a
+  // terminal, so a stray space is always a paste accident.
+  const value = els.testStringInput.value.trim();
+  const other = kind === 'accept' ? 'reject' : 'accept';
+
+  if (testStrings[kind].includes(value)) {
+    showToast('That string is already in this list.', 'info');
+    return;
+  }
+  if (testStrings[other].includes(value)) {
+    showToast(
+      'That string is already in the other list — it cannot be expected to be both accepted and rejected.',
+      'warning',
+      6000
+    );
+    return;
+  }
+
+  testStrings[kind].push(value);
+  els.testStringInput.value = '';
+  renderTestStrings();
+  rebuildGrammar();
+
+  // A warning, never a refusal: the alphabet is often still being typed when
+  // the test cases are written, and blocking that would be the wrong call.
+  const declared = new Set(state.grammar.terminals);
+  const unknown = [...value].find((character) => !declared.has(character));
+  if (unknown !== undefined) {
+    showToast(
+      `Added — but "${unknown}" is not a declared terminal yet, so this string cannot be run.`,
+      'warning',
+      6000
+    );
+  }
+}
+
+/* ------------------------------------------------------------------------ */
 /* Save / export actions                                                     */
 /* ------------------------------------------------------------------------ */
 
@@ -662,6 +796,9 @@ function exportGrammar() {
  *     variablesText, terminalsText, // raw declaration inputs, as typed
  *     startSymbol,                  // current dropdown value
  *     rows: [{left, rhsText}],      // production lines, as typed
+ *     testStrings,                  // {accept, reject} — stored as DATA, not
+ *                                   // form text: the card owns real lists,
+ *                                   // there is no half-typed state to keep
  *     grammarId,                    // server id if the grammar was saved
  *     borrowedFrom,                 // owner it was opened from, if not ours
  *     dirty }                       // unsaved flag, restored verbatim
@@ -676,6 +813,7 @@ function scheduleDraftSave() {
       terminalsText: els.terminals.value,
       startSymbol: els.start.value,
       rows: rows.map(({ left, rhsText }) => ({ left, rhsText })),
+      testStrings,
       grammarId: state.grammarId,
       borrowedFrom: state.borrowedFrom,
       dirty: state.dirty,

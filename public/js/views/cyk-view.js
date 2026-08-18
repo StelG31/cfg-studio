@@ -2,32 +2,52 @@
  * public/js/views/cyk-view.js
  * ---------------------------------------------------------------------------
  * Purpose:
- *   The CYK Simulator section:
- *     - resolves which CNF grammar to run (the last conversion result, or
- *       the working grammar itself if it is already CNF, with a one-click
- *       inline conversion otherwise),
- *     - runs the shared algorithm (core/cyk.js) instantly, then REPLAYS its
- *       recorded step trace through the StepPlayer (animations.js):
+ *   The Simulator section — testing one string against the grammar.
+ *
+ *   The file is still called cyk-view because the CYK animation is the bulk
+ *   of what it does, but the section now offers a CHOICE of engine and this
+ *   module owns that choice's UI:
+ *
+ *     - presents the engine radio group (Earley / CYK / both) and keeps it
+ *       in step with state.engine, which the batch runner shares,
+ *     - shows the grammar each engine actually runs on: the user's own for
+ *       Earley, the CNF conversion for CYK (with a one-click inline
+ *       conversion when none exists yet),
+ *     - runs the string through engines.js, then — for CYK only — REPLAYS
+ *       the recorded step trace through the StepPlayer (animations.js):
  *       cells fill one by one, the current cell and its two source cells
  *       are highlighted, the rules used are flashed in the grammar panel,
  *       and every step is explained in a live caption,
- *     - shows the Accepted / Rejected verdict and hands accepted runs over
- *       to the Parse Tree section.
+ *     - shows the Accepted / Rejected verdict, the engine comparison table
+ *       when both ran, and hands accepted runs to the Parse Tree section.
+ *
+ *   Earley deliberately has NO animation of its own: its chart visualisation
+ *   is a phase of its own, and core/earley.js already records the trace that
+ *   phase will replay. Until then Earley shows a verdict and a parse tree.
  *
  * DOM contract (views/index.html):
- *   #cykGrammar #cykInput #btnRunCyk #cykSimCard #cykTableWrap
- *   #cykExplanation #cykProgress #cykVerdict
+ *   #cykEngineChoice #cykGrammarCardTitle
+ *   #cykGrammar #cykInput #btnRunCyk #cykSimCard #cykSimTitle #cykPlayback
+ *   #cykTableWrap #cykExplanation #cykProgress #cykVerdict #simCompare
  *   #btnCykPlay #btnCykStepBack #btnCykStepFwd #btnCykSkip #btnCykReset #cykSpeed
  */
 
-import { runCyk } from '/core/cyk.js';
-import { isCnf, convertToCnf } from '/core/cnf.js';
-import { validateGrammar } from '/core/validator.js';
+import { convertToCnf } from '/core/cnf.js';
 import { productionKey, EPSILON } from '/core/grammar.js';
-import { state, events, emit, navigateTo } from '../app.js';
+import { state, events, emit, navigateTo, setEngine } from '../app.js';
 import { escapeHtml, showToast, initTooltips } from '../ui.js';
 import { grammarHtml, symbolHtml, productionHtml } from '../grammar-render.js';
 import { StepPlayer } from '../animations.js';
+import {
+  ENGINES,
+  ENGINE_ORDER,
+  ENGINE_LABELS,
+  ENGINE_HINTS,
+  engineAvailability,
+  resolveCnfGrammar,
+  resolveEarleyGrammar,
+  runOnce,
+} from '../engines.js';
 
 const els = {};
 let player = null;
@@ -35,14 +55,19 @@ let player = null;
 let cellContents = new Map();
 
 export function init() {
+  els.engineChoice = document.getElementById('cykEngineChoice');
+  els.grammarTitle = document.getElementById('cykGrammarCardTitle');
   els.grammar = document.getElementById('cykGrammar');
   els.input = document.getElementById('cykInput');
   els.runButton = document.getElementById('btnRunCyk');
   els.simCard = document.getElementById('cykSimCard');
+  els.simTitle = document.getElementById('cykSimTitle');
+  els.playback = document.getElementById('cykPlayback');
   els.tableWrap = document.getElementById('cykTableWrap');
   els.explanation = document.getElementById('cykExplanation');
   els.progress = document.getElementById('cykProgress');
   els.verdict = document.getElementById('cykVerdict');
+  els.compare = document.getElementById('simCompare');
   els.playButton = document.getElementById('btnCykPlay');
   els.speed = document.getElementById('cykSpeed');
 
@@ -60,16 +85,76 @@ export function init() {
 
   const invalidate = () => {
     teardownSimulation();
+    renderEngineChoice();
     renderGrammarPanel();
   };
   events.addEventListener('grammar-changed', invalidate);
   events.addEventListener('grammar-loaded', invalidate);
-  events.addEventListener('cnf-computed', renderGrammarPanel);
+  events.addEventListener('cnf-computed', () => {
+    renderEngineChoice();
+    renderGrammarPanel();
+  });
+  // Switching engine drops the previous run (app.js clears state.run), so the
+  // simulation card must go with it rather than keep showing another engine's
+  // verdict under the new selection.
+  events.addEventListener('engine-changed', invalidate);
   events.addEventListener('section-shown', (event) => {
-    if (event.detail?.name === 'cyk') renderGrammarPanel();
+    if (event.detail?.name === 'cyk') {
+      renderEngineChoice();
+      renderGrammarPanel();
+    }
   });
 
+  // The batch runner asks for one of its rows to be shown in detail here.
+  // It navigates first, so by the time this fires the section is laid out
+  // and the CYK table can measure itself.
+  events.addEventListener('simulate-request', (event) => {
+    els.input.value = event.detail?.input ?? '';
+    run();
+  });
+
+  renderEngineChoice();
   renderGrammarPanel();
+}
+
+/* ------------------------------------------------------------------------ */
+/* Engine selection                                                          */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Paint the engine radio group from state.engine, disabling any choice that
+ * cannot run right now and saying why. Rebuilt wholesale on every call, so
+ * listeners never accumulate.
+ */
+function renderEngineChoice() {
+  const availability = engineAvailability();
+
+  els.engineChoice.innerHTML = ENGINE_ORDER.map((engine) => {
+    const { ready, reason } = availability[engine];
+    const id = `engine-${engine}`;
+    const checked = state.engine === engine ? 'checked' : '';
+    const disabled = ready ? '' : 'disabled';
+    const hint = ready ? ENGINE_HINTS[engine] : reason;
+    return `
+      <div class="form-check engine-choice">
+        <input class="form-check-input" type="radio" name="cykEngine" id="${id}"
+               value="${engine}" ${checked} ${disabled}>
+        <label class="form-check-label" for="${id}">
+          ${escapeHtml(ENGINE_LABELS[engine])}
+          <span class="d-block form-text mt-0">${escapeHtml(hint)}</span>
+        </label>
+      </div>`;
+  }).join('');
+
+  for (const input of els.engineChoice.querySelectorAll('input[name="cykEngine"]')) {
+    input.addEventListener('change', () => setEngine(input.value));
+  }
+
+  const ready = availability[state.engine].ready;
+  els.runButton.disabled = !ready;
+  els.runButton.innerHTML =
+    '<i class="bi bi-play-fill" aria-hidden="true"></i> ' +
+    (state.engine === ENGINES.BOTH ? 'Run both' : `Run ${state.engine === ENGINES.EARLEY ? 'Earley' : 'CYK'}`);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -77,29 +162,48 @@ export function init() {
 /* ------------------------------------------------------------------------ */
 
 /**
- * Preference order:
- *   1. the result of the last CNF conversion (state.cnf),
- *   2. the working grammar itself, if it happens to be valid CNF already.
- * Anything else → null (the panel offers an inline conversion).
+ * Show the grammar the SELECTED engine will actually run on.
  *
- * IMPORTANT cross-module invariant: state.cnf.result is trusted here
- * WITHOUT re-validation. That is sound only because app.js clears
- * state.cnf on every grammar edit (see setGrammar/markGrammarEdited) —
- * a stale conversion can never survive a change to its source grammar.
- * Any new code path that mutates the working grammar must preserve this.
- *
- * @returns {object|null} a CNF grammar ready for runCyk, or null.
+ * The two engines answer this differently, and that difference is the whole
+ * point of offering the choice: Earley runs the grammar as written, CYK runs
+ * its CNF conversion. Showing the wrong one would make the parse tree's
+ * symbols inexplicable.
  */
-function resolveCnfGrammar() {
-  if (state.cnf && !state.cnf.emptyLanguage) return state.cnf.result;
-  if (state.grammar && validateGrammar(state.grammar).valid && isCnf(state.grammar)) {
-    return state.grammar;
+function renderGrammarPanel() {
+  if (state.engine === ENGINES.EARLEY) {
+    renderOriginalGrammarPanel();
+    return;
   }
-  return null;
+  renderCnfGrammarPanel();
 }
 
-function renderGrammarPanel() {
+/** The user's own grammar — what Earley parses, unconverted. */
+function renderOriginalGrammarPanel() {
+  const grammar = resolveEarleyGrammar();
+  els.grammarTitle.textContent = 'Grammar as written';
+
+  if (!grammar) {
+    els.grammar.innerHTML = `
+      <p class="text-secondary mb-0">
+        Define a valid grammar in the <a href="#editor">editor</a> first.
+      </p>`;
+    return;
+  }
+
+  els.grammar.innerHTML = `
+    ${grammarHtml(grammar)}
+    <hr>
+    <div class="small text-secondary">
+      start: ${symbolHtml(grammar.startSymbol, grammar)} ·
+      parsed directly — no Chomsky Normal Form conversion needed
+    </div>`;
+}
+
+/** The CNF grammar — what CYK parses. Unchanged from before engine choice. */
+function renderCnfGrammarPanel() {
   const grammar = resolveCnfGrammar();
+  els.grammarTitle.textContent =
+    state.engine === ENGINES.BOTH ? 'Grammar in CNF (for CYK)' : 'Grammar in CNF';
 
   if (grammar) {
     // data-rule-key lets combine-steps flash the exact rules being used.
@@ -118,11 +222,8 @@ function renderGrammarPanel() {
         start: ${symbolHtml(grammar.startSymbol, grammar)} ·
         ${state.cnf ? 'from the CNF conversion of the current grammar' : 'the current grammar is already in CNF'}
       </div>`;
-    els.runButton.disabled = false;
     return;
   }
-
-  els.runButton.disabled = true;
 
   if (state.cnf?.emptyLanguage) {
     els.grammar.innerHTML = `
@@ -133,7 +234,7 @@ function renderGrammarPanel() {
     return;
   }
 
-  const hasUsableGrammar = state.grammar && validateGrammar(state.grammar).valid;
+  const hasUsableGrammar = resolveEarleyGrammar() !== null;
   els.grammar.innerHTML = `
     <p class="text-secondary">
       CYK needs a grammar in Chomsky Normal Form. ${
@@ -146,7 +247,10 @@ function renderGrammarPanel() {
       hasUsableGrammar
         ? `<button type="button" class="btn btn-sm btn-primary" id="btnCykAutoCnf">
              <i class="bi bi-arrow-left-right" aria-hidden="true"></i> Convert to CNF now
-           </button>`
+           </button>
+           <p class="form-text mb-0">
+             Or choose direct parsing above, which needs no conversion at all.
+           </p>`
         : ''
     }`;
 
@@ -154,6 +258,7 @@ function renderGrammarPanel() {
     try {
       state.cnf = convertToCnf(state.grammar);
       emit('cnf-computed');
+      renderEngineChoice();
       renderGrammarPanel();
       showToast('Converted to CNF — see the CNF tab for every step.', 'success');
     } catch (err) {
@@ -167,36 +272,43 @@ function renderGrammarPanel() {
 /* ------------------------------------------------------------------------ */
 
 /**
- * Execute a simulation: run the ALGORITHM instantly (core/cyk.js), then
- * hand its recorded step trace to a fresh StepPlayer for replay. The
- * animation is therefore a faithful replay of what the algorithm did,
- * never a re-implementation of it.
+ * Execute a simulation: run the selected engine instantly (engines.js), then
+ * — when CYK was one of them — hand its recorded step trace to a fresh
+ * StepPlayer for replay. The animation is therefore a faithful replay of
+ * what the algorithm did, never a re-implementation of it.
+ *
+ * Earley has no animation yet, so an Earley-only run shows the verdict
+ * straight away and leaves the playback chrome hidden.
  */
 function run() {
-  const grammar = resolveCnfGrammar();
-  if (!grammar) {
-    showToast('No CNF grammar available — convert the grammar first.', 'warning');
-    return;
-  }
-
   // Trimmed on purpose: stray spaces are the most common paste accident,
   // and whitespace can never be a terminal anyway (isValidTerminalSymbol).
   const input = els.input.value.trim();
 
-  let result;
+  let record;
   try {
-    result = runCyk(grammar, input);
+    record = runOnce(state.engine, input);
   } catch (err) {
     showToast(err.message, 'danger', 7000);
     return;
   }
 
-  state.cyk = { grammar, input, result };
-  emit('cyk-computed');
+  state.run = record;
+  emit('parse-computed');
 
   els.simCard.classList.remove('d-none');
   teardownPlayerOnly();
+  renderSimulationChrome(record);
+  renderCompare(record);
 
+  // No CYK in this run means no trace to replay: show the verdict directly.
+  if (!record.cyk) {
+    els.tableWrap.innerHTML = '';
+    renderVerdict({ accepted: record.accepted });
+    return;
+  }
+
+  const result = record.cyk.result;
   player = new StepPlayer({
     steps: result.steps,
     applyStep,
@@ -220,8 +332,92 @@ function teardownSimulation() {
   els.simCard.classList.add('d-none');
   els.tableWrap.innerHTML = '';
   els.verdict.innerHTML = '';
+  els.compare.innerHTML = '';
   els.explanation.textContent = '';
   els.progress.textContent = '';
+}
+
+/* ------------------------------------------------------------------------ */
+/* Engine-dependent chrome                                                   */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Show only the parts of the simulation card the run can actually fill.
+ *
+ * The playback controls, the table and the running caption all belong to the
+ * CYK trace; a run without CYK in it has none of them, and leaving them on
+ * screen would offer buttons that drive nothing.
+ *
+ * @param {object} record The run record from engines.js.
+ */
+function renderSimulationChrome(record) {
+  const hasTrace = record.cyk !== null;
+  els.playback.classList.toggle('d-none', !hasTrace);
+  els.tableWrap.classList.toggle('d-none', !hasTrace);
+  els.explanation.classList.toggle('d-none', !hasTrace);
+  els.progress.classList.toggle('d-none', !hasTrace);
+  els.simTitle.textContent = hasTrace ? 'Simulation' : 'Result';
+}
+
+/**
+ * The engine comparison table — 'both' mode only.
+ *
+ * Reports each engine's parse time separately from the CNF conversion,
+ * because the conversion is paid ONCE per grammar and then reused for every
+ * string after it. Charging it to CYK per string would overstate the cost by
+ * however many strings were run.
+ *
+ * @param {object} record The run record from engines.js.
+ */
+function renderCompare(record) {
+  if (record.engine !== ENGINES.BOTH || !record.earley || !record.cyk) {
+    els.compare.innerHTML = '';
+    return;
+  }
+
+  const verdict = (accepted) => (accepted ? 'Accepted' : 'Rejected');
+  const time = (ms, reps) =>
+    `${ms.toFixed(3)} ms${reps > 1 ? ` <span class="text-secondary">(mean of ${reps} runs)</span>` : ''}`;
+
+  const agreement = record.disagreement
+    ? `<div class="alert alert-danger small mb-0 mt-2" role="alert">
+         <i class="bi bi-exclamation-octagon-fill me-1" aria-hidden="true"></i>
+         <strong>The two engines disagreed on this string.</strong>
+         Both decide the same language, so this is a bug in CFG Studio — not a
+         property of your grammar. Please report it with the grammar and the string.
+       </div>`
+    : `<p class="small text-secondary mb-0 mt-2">
+         <i class="bi bi-check2 me-1" aria-hidden="true"></i>
+         Both engines agree, as they always must — they decide the same language.
+         Only the time taken differs.
+       </p>`;
+
+  els.compare.innerHTML = `
+    <div class="table-responsive">
+      <table class="table table-sm align-middle compare-table mb-0">
+        <thead>
+          <tr><th scope="col">Engine</th><th scope="col">Verdict</th><th scope="col">Time</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Earley <span class="fw-normal text-secondary">— direct</span></th>
+            <td>${verdict(record.earley.result.accepted)}</td>
+            <td>${time(record.earley.ms, record.earley.reps)}</td>
+          </tr>
+          <tr>
+            <th scope="row">CYK <span class="fw-normal text-secondary">— via CNF</span></th>
+            <td>${verdict(record.cyk.result.accepted)}</td>
+            <td>${time(record.cyk.ms, record.cyk.reps)}</td>
+          </tr>
+          <tr class="compare-aside">
+            <th scope="row">CNF conversion</th>
+            <td>—</td>
+            <td>${time(record.cnfMs, record.cnfReps)} <span class="text-secondary">· one-off per grammar</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    ${agreement}`;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -334,7 +530,7 @@ function highlightRules(productions) {
 
 /** Render one trace step onto the DOM (idempotent-friendly for replays). */
 function applyStep(step, { animate }) {
-  const grammar = state.cyk.grammar;
+  const grammar = state.run.cyk.grammar;
   clearHighlights();
   els.explanation.textContent = step.explanation;
 
@@ -369,7 +565,7 @@ function applyStep(step, { animate }) {
     }
     case 'verdict': {
       renderVerdict(step);
-      const apex = document.getElementById(cellId(0, state.cyk.result.n));
+      const apex = document.getElementById(cellId(0, state.run.cyk.result.n));
       apex?.classList.add(step.accepted ? 'cell-accept' : 'cell-reject');
       break;
     }
@@ -379,12 +575,16 @@ function applyStep(step, { animate }) {
 
 /**
  * The Accepted/Rejected banner; accepted runs get the "Show parse tree"
- * button that hands over to the tree section (which reads state.cyk).
+ * button that hands over to the tree section (which reads state.run).
  *
- * @param {object} step The trace's 'verdict' step ({accepted, explanation}).
+ * Takes only {accepted} so it serves both callers: CYK's trace passes its
+ * 'verdict' step, and an Earley run — which has no trace — passes the run
+ * record's verdict directly.
+ *
+ * @param {{accepted: boolean}} step The verdict to display.
  */
 function renderVerdict(step) {
-  const { input } = state.cyk;
+  const { input } = state.run;
   const shownInput = input === '' ? EPSILON : input;
   els.verdict.innerHTML = step.accepted
     ? `<div class="verdict-banner verdict-accepted">

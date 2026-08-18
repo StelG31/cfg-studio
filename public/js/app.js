@@ -7,8 +7,9 @@
  *   CFG Studio is a single-page application without a framework, so this
  *   module provides the two mechanisms a framework would normally supply:
  *
- *     1. STATE — one shared `state` object holding the working grammar and
- *        the latest computation results (CNF conversion, CYK run). Views
+ *     1. STATE — one shared `state` object holding the working grammar, the
+ *        chosen parser engine and the latest computation results (CNF
+ *        conversion, parse run). Views
  *        read it directly and mutate it ONLY through the setters below.
  *
  *     2. EVENTS — a DOM EventTarget used as a publish/subscribe bus.
@@ -56,15 +57,34 @@ export const state = {
   dirty: false,
   /** Result of the last CNF conversion ({original, steps, result, ...}). */
   cnf: null,
-  /** Result of the last CYK run ({grammar, input, result}). */
-  cyk: null,
+  /**
+   * Which parser engine the simulator and the batch runner use — one of
+   * ENGINES in engines.js. Shared rather than owned by a view so the choice
+   * follows the user between the two screens that offer it.
+   *
+   * Defaults to CYK: it is what the app did before engines were selectable,
+   * and the animated table is the feature the rest of the UI is built around.
+   * The literal avoids importing engines.js here, which imports this module.
+   */
+  engine: 'cyk',
+  /**
+   * Result of the last parse run, whichever engine produced it — the run
+   * record built by runOnce() in engines.js ({engine, input, accepted,
+   * earley, cyk, ...}). Named for the act, not the algorithm, because it now
+   * holds Earley and compare runs too.
+   */
+  run: null,
 };
 
 /** Application-wide event bus. Event names used across views:
  *  - 'grammar-changed'  the working grammar was edited in place
  *  - 'grammar-loaded'   a different grammar replaced the working one
  *  - 'cnf-computed'     state.cnf holds a fresh conversion
- *  - 'cyk-computed'     state.cyk holds a fresh simulation
+ *  - 'parse-computed'   state.run holds a fresh parse run (either engine)
+ *  - 'engine-changed'   state.engine was switched ({detail: {engine}})
+ *  - 'simulate-request' run this string in the simulator now
+ *                       ({detail: {input}}) — sent by the batch runner so a
+ *                       results row can open its own detailed animation
  *  - 'section-shown'    a section became visible ({detail: {name}}) —
  *                       views use it to refresh lazily / refit layouts
  *  - 'user-changed'     someone signed in or out; state.user is current
@@ -102,7 +122,7 @@ export function setUser(user) {
     state.grammarId = null;
     state.dirty = false;
     state.cnf = null;
-    state.cyk = null;
+    state.run = null;
   }
 
   document.body.classList.toggle('signed-in', !signedOut);
@@ -122,9 +142,9 @@ export function setUser(user) {
 /**
  * Replace the working grammar (load / import / new).
  *
- * Clearing state.cnf and state.cyk here (and in markGrammarEdited) is the
+ * Clearing state.cnf and state.run here (and in markGrammarEdited) is the
  * INVALIDATION INVARIANT the whole pipeline relies on: downstream views may
- * trust a non-null state.cnf/state.cyk precisely because any change to the
+ * trust a non-null state.cnf/state.run precisely because any change to the
  * grammar destroys them.
  *
  * @param {object} grammar The new working grammar.
@@ -138,9 +158,25 @@ export function setGrammar(grammar, { id = null, borrowedFrom = null } = {}) {
   state.borrowedFrom = borrowedFrom;
   state.dirty = false;
   state.cnf = null;
-  state.cyk = null;
+  state.run = null;
   emit('grammar-loaded');
   updateGrammarIndicator();
+}
+
+/**
+ * Choose the parser engine.
+ *
+ * The previous run is dropped: it was produced by a different engine, so
+ * leaving it on screen would show a verdict and a parse tree that the
+ * currently selected engine did not produce.
+ *
+ * @param {string} engine One of ENGINES in engines.js.
+ */
+export function setEngine(engine) {
+  if (state.engine === engine) return;
+  state.engine = engine;
+  state.run = null;
+  emit('engine-changed', { engine });
 }
 
 /** Signal that the working grammar was edited in the editor. */
@@ -148,7 +184,7 @@ export function markGrammarEdited() {
   state.dirty = true;
   // Editing invalidates every downstream computation.
   state.cnf = null;
-  state.cyk = null;
+  state.run = null;
   emit('grammar-changed');
   updateGrammarIndicator();
 }
@@ -212,7 +248,7 @@ function updateUserIndicator() {
 /* Hash-based section navigation                                             */
 /* ------------------------------------------------------------------------ */
 
-const SECTION_NAMES = ['editor', 'cnf', 'cyk', 'tree', 'grammars', 'users', 'help', 'login'];
+const SECTION_NAMES = ['editor', 'cnf', 'cyk', 'batch', 'tree', 'grammars', 'users', 'help', 'login'];
 const DEFAULT_SECTION = 'editor';
 
 function sectionFromHash() {
@@ -335,6 +371,8 @@ async function init() {
   cnfView.init();
   const cykView = await import('./views/cyk-view.js');
   cykView.init();
+  const batchView = await import('./views/batch-view.js');
+  batchView.init();
   const treeView = await import('./views/tree-view.js');
   treeView.init();
 

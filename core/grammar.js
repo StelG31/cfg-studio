@@ -90,10 +90,15 @@ export function isValidTerminalSymbol(symbol) {
  *     variables:   string[],    // V  — non-terminals, declaration order
  *     terminals:   string[],    // Σ  — single-character terminals
  *     startSymbol: string,      // S  — must be one of `variables` (validator checks)
- *     productions: [ { left: string, right: string[] } ] }
+ *     productions: [ { left: string, right: string[] } ],
  *                                // P — right = [] means ε; symbols are stored
  *                                // pre-tokenized, so no algorithm ever
  *                                // re-parses text
+ *     testStrings: { accept: string[], reject: string[] } }
+ *                                // strings the author expects to be in and
+ *                                // out of L(G), carried with the grammar so
+ *                                // the batch runner can re-check them after
+ *                                // every edit
  *
  * @param {object} [parts] Raw fields in the shape above (all optional).
  * @returns {object} a fresh, normalized grammar object.
@@ -105,6 +110,7 @@ export function createGrammar({
   terminals = [],
   startSymbol = '',
   productions = [],
+  testStrings = { accept: [], reject: [] },
 } = {}) {
   return {
     name: String(name).trim() || 'Untitled grammar',
@@ -116,7 +122,31 @@ export function createGrammar({
       left: String(p.left).trim(),
       right: Array.isArray(p.right) ? p.right.map((s) => String(s)) : [],
     })),
+    testStrings: normalizeTestStrings(testStrings),
   };
+}
+
+/**
+ * Normalize the two expected-outcome lists.
+ *
+ * ⚠ UNLIKE `variables` and `terminals` two lines above, this does NOT drop
+ * empty strings. "" IS the empty string ε, which is a perfectly ordinary
+ * test case — four of the six built-in samples accept it — so filtering
+ * empties here would silently delete the one test case a student is most
+ * likely to get wrong. It does not trim either: trimming is entry-time UI
+ * behaviour, and the model must never quietly rewrite stored data.
+ *
+ * Only the EXPECTED OUTCOME is recorded, never which engine produced it.
+ * Both engines decide the same language and must agree; a disagreement is a
+ * bug to be fixed, not a fact worth storing.
+ *
+ * @param {*} raw Anything a caller or a JSON file might supply.
+ * @returns {{accept: string[], reject: string[]}}
+ */
+function normalizeTestStrings(raw) {
+  const list = (value) =>
+    Array.isArray(value) ? value.filter((s) => typeof s === 'string') : [];
+  return { accept: list(raw?.accept), reject: list(raw?.reject) };
 }
 
 /** A fresh, blank grammar for the editor's initial state. */
@@ -320,6 +350,17 @@ export function grammarToText(grammar, { arrow = '→', separator = ' | ' } = {}
 /* ------------------------------------------------------------------------ */
 
 export const GRAMMAR_FORMAT = 'cfg-studio-grammar';
+/**
+ * Deliberately still 1 after `testStrings` was added to the model.
+ *
+ * The field is OPTIONAL and purely additive, so the format stayed compatible
+ * in both directions: a file written before it imports fine (the field
+ * defaults to empty lists), and a file written with it loads in an older
+ * build too, because createGrammar there simply drops the key it does not
+ * know. deserializeGrammar has never read this number at all, so bumping it
+ * would announce a compatibility boundary that no code anywhere enforces.
+ * Raise it when a change actually breaks one of those two directions.
+ */
 export const GRAMMAR_FORMAT_VERSION = 1;
 
 /**
@@ -382,6 +423,23 @@ export function deserializeGrammar(input) {
   if (!Array.isArray(raw.productions)) {
     return { ok: false, error: '"productions" must be an array.' };
   }
+  // Optional on purpose: every grammar exported before test strings existed
+  // has no such key, and those files must keep importing cleanly.
+  if (raw.testStrings !== undefined && raw.testStrings !== null) {
+    if (typeof raw.testStrings !== 'object' || Array.isArray(raw.testStrings)) {
+      return {
+        ok: false,
+        error: '"testStrings" must be an object like { "accept": [], "reject": [] }.',
+      };
+    }
+    for (const key of ['accept', 'reject']) {
+      const value = raw.testStrings[key];
+      if (value !== undefined && !isStringArray(value)) {
+        return { ok: false, error: `"testStrings.${key}" must be an array of strings.` };
+      }
+    }
+  }
+
   for (const [index, production] of raw.productions.entries()) {
     if (
       production === null ||

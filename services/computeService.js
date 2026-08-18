@@ -18,7 +18,7 @@
 import { deserializeGrammar } from '../core/grammar.js';
 import { validateGrammar } from '../core/validator.js';
 import { convertToCnf } from '../core/cnf.js';
-import { runCyk } from '../core/cyk.js';
+import { runCyk, MAX_INPUT_LENGTH } from '../core/cyk.js';
 import { HttpError } from '../utils/httpError.js';
 
 /** Hard limits — far above anything a classroom grammar needs. */
@@ -27,6 +27,18 @@ export const LIMITS = {
   terminals: 100,
   productions: 200,
   rhsLength: 50,
+  /**
+   * accept + reject COMBINED, matching the batch runner's cap, so that
+   * "run all saved test strings" can never assemble a batch the runner
+   * would refuse.
+   */
+  testStrings: 50,
+  /**
+   * Imported rather than written as another literal 30: a test string longer
+   * than the parsers accept could never be run, so storing one would only
+   * create data that fails later, further from the cause.
+   */
+  testStringLength: MAX_INPUT_LENGTH,
 };
 
 /**
@@ -68,7 +80,52 @@ export function parseGrammarPayload(payload) {
     );
   }
 
+  assertTestStringsWithinLimits(grammar.testStrings);
+
   return grammar;
+}
+
+/**
+ * Guard the saved test-string lists.
+ *
+ * Runs server-side even though the editor checks the same things, because
+ * the browser is not the only way to reach this endpoint.
+ *
+ * @param {{accept: string[], reject: string[]}} testStrings
+ * @throws {HttpError} 400 GRAMMAR_TOO_LARGE | TEST_STRING_TOO_LONG |
+ *                     TEST_STRINGS_CONFLICT.
+ */
+function assertTestStringsWithinLimits({ accept, reject }) {
+  if (accept.length + reject.length > LIMITS.testStrings) {
+    throw HttpError.badRequest(
+      'GRAMMAR_TOO_LARGE',
+      `A grammar may carry at most ${LIMITS.testStrings} test strings in total ` +
+        '(accepted and rejected combined).'
+    );
+  }
+
+  for (const value of [...accept, ...reject]) {
+    if (value.length > LIMITS.testStringLength) {
+      throw HttpError.badRequest(
+        'TEST_STRING_TOO_LONG',
+        `Test strings may be at most ${LIMITS.testStringLength} characters — ` +
+          'a longer one could never be run.'
+      );
+    }
+  }
+
+  // A string cannot be expected to be both in and out of the language. This
+  // is a contradiction in the data rather than a size problem, so it gets its
+  // own code and its own explanation.
+  const accepted = new Set(accept);
+  const contradiction = reject.find((value) => accepted.has(value));
+  if (contradiction !== undefined) {
+    throw HttpError.badRequest(
+      'TEST_STRINGS_CONFLICT',
+      `"${contradiction}" is listed as both accepted and rejected — ` +
+        'a string can only be expected to do one of the two.'
+    );
+  }
 }
 
 /**

@@ -220,3 +220,90 @@ describe('error handling', () => {
     expect(response.body.error.code).toBe('INVALID_JSON');
   });
 });
+
+/* ------------------------------------------------------------------------ */
+/* Test strings saved with a grammar                                         */
+/* ------------------------------------------------------------------------ */
+
+describe('test strings persist with the grammar', () => {
+  test('POST stores them and GET returns them', async () => {
+    const grammar = { ...anbn(), testStrings: { accept: ['', 'ab', 'aabb'], reject: ['a', 'ba'] } };
+    const created = await agent.post('/api/grammars').send({ grammar });
+    expect(created.status).toBe(201);
+    expect(created.body.testStrings).toEqual({ accept: ['', 'ab', 'aabb'], reject: ['a', 'ba'] });
+
+    const fetched = await agent.get(`/api/grammars/${created.body.id}`);
+    expect(fetched.status).toBe(200);
+    // The empty string in particular has to come back: it is the epsilon
+    // test case, and the easiest one to lose to a stray filter.
+    expect(fetched.body.testStrings).toEqual({ accept: ['', 'ab', 'aabb'], reject: ['a', 'ba'] });
+  });
+
+  test('PUT replaces them', async () => {
+    const created = await agent
+      .post('/api/grammars')
+      .send({ grammar: { ...anbn(), testStrings: { accept: ['ab'], reject: [] } } });
+
+    const updated = await agent
+      .put(`/api/grammars/${created.body.id}`)
+      .send({ grammar: { ...anbn(), testStrings: { accept: ['aabb'], reject: ['b'] } } });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.testStrings).toEqual({ accept: ['aabb'], reject: ['b'] });
+  });
+
+  test('a grammar saved without them reads back with empty lists', async () => {
+    // The backward-compatibility guarantee: rows written before the column
+    // was ever read still answer with the shape every client expects.
+    const created = await agent.post('/api/grammars').send({ grammar: anbn() });
+    expect(created.status).toBe(201);
+    expect(created.body.testStrings).toEqual({ accept: [], reject: [] });
+
+    const fetched = await agent.get(`/api/grammars/${created.body.id}`);
+    expect(fetched.body.testStrings).toEqual({ accept: [], reject: [] });
+  });
+
+  test('the listing stays metadata-only', async () => {
+    await agent
+      .post('/api/grammars')
+      .send({ grammar: { ...anbn(), testStrings: { accept: ['ab'], reject: [] } } });
+    const response = await agent.get('/api/grammars');
+    expect(response.status).toBe(200);
+    for (const entry of response.body) expect(entry.testStrings).toBeUndefined();
+  });
+});
+
+describe('test string guards (server-side, whatever the browser checked)', () => {
+  test('too many in total is refused', async () => {
+    const many = Array.from({ length: 26 }, (_, i) => 'a'.repeat((i % 20) + 1));
+    const response = await agent.post('/api/grammars').send({
+      grammar: { ...anbn(), testStrings: { accept: many, reject: many } },
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('GRAMMAR_TOO_LARGE');
+  });
+
+  test('a string longer than the parsers accept is refused', async () => {
+    const response = await agent.post('/api/grammars').send({
+      grammar: { ...anbn(), testStrings: { accept: ['a'.repeat(31)], reject: [] } },
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('TEST_STRING_TOO_LONG');
+  });
+
+  test('the same string in both lists is refused', async () => {
+    const response = await agent.post('/api/grammars').send({
+      grammar: { ...anbn(), testStrings: { accept: ['ab'], reject: ['ab'] } },
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('TEST_STRINGS_CONFLICT');
+  });
+
+  test('a malformed testStrings field is refused', async () => {
+    const response = await agent
+      .post('/api/grammars')
+      .send({ grammar: { ...anbn(), testStrings: { accept: 'ab' } } });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_GRAMMAR_FORMAT');
+  });
+});

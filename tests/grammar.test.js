@@ -3,7 +3,7 @@
  * ---------------------------------------------------------------------------
  * Unit tests for the grammar data model (core/grammar.js): symbol
  * conventions, longest-match tokenization, production-line parsing,
- * formatting and JSON (de)serialization.
+ * formatting, saved test strings and JSON (de)serialization.
  */
 
 import {
@@ -235,5 +235,110 @@ describe('JSON (de)serialization', () => {
         })
       ).ok
     ).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------------ */
+/* Test strings                                                              */
+/* ------------------------------------------------------------------------ */
+
+describe('testStrings on the grammar model', () => {
+  test('defaults to two empty lists', () => {
+    expect(createGrammar({}).testStrings).toEqual({ accept: [], reject: [] });
+    expect(createEmptyGrammar().testStrings).toEqual({ accept: [], reject: [] });
+  });
+
+  test('keeps the lists it is given, in order', () => {
+    const grammar = createGrammar({
+      testStrings: { accept: ['()', '(())'], reject: ['(', ')('] },
+    });
+    expect(grammar.testStrings).toEqual({ accept: ['()', '(())'], reject: ['(', ')('] });
+  });
+
+  test('KEEPS the empty string — "" is ε, a legitimate test case', () => {
+    // The regression this guards: variables and terminals drop empty
+    // entries, and copying that filter here would silently delete the ε
+    // case from four of the six built-in samples.
+    const grammar = createGrammar({ testStrings: { accept: [''], reject: [''] } });
+    expect(grammar.testStrings.accept).toEqual(['']);
+    expect(grammar.testStrings.reject).toEqual(['']);
+  });
+
+  test('does not trim — the model never rewrites stored data', () => {
+    expect(createGrammar({ testStrings: { accept: [' a '] } }).testStrings.accept).toEqual([' a ']);
+  });
+
+  test('drops entries that are not strings', () => {
+    const grammar = createGrammar({
+      testStrings: { accept: ['a', 1, null, undefined, {}], reject: [['b']] },
+    });
+    expect(grammar.testStrings).toEqual({ accept: ['a'], reject: [] });
+  });
+
+  test('survives a missing, null or non-array field', () => {
+    expect(createGrammar({ testStrings: null }).testStrings).toEqual({ accept: [], reject: [] });
+    expect(createGrammar({ testStrings: {} }).testStrings).toEqual({ accept: [], reject: [] });
+    expect(createGrammar({ testStrings: { accept: 'a' } }).testStrings).toEqual({
+      accept: [],
+      reject: [],
+    });
+  });
+
+  test('cloneGrammar deep-copies them', () => {
+    const original = createGrammar({ testStrings: { accept: ['a'], reject: ['b'] } });
+    const copy = cloneGrammar(original);
+    copy.testStrings.accept.push('c');
+    expect(original.testStrings.accept).toEqual(['a']);
+  });
+});
+
+describe('test strings through (de)serialization', () => {
+  const withStrings = () =>
+    createGrammar({
+      name: 'Balanced',
+      variables: ['S'],
+      terminals: ['(', ')'],
+      startSymbol: 'S',
+      productions: [{ left: 'S', right: [] }],
+      testStrings: { accept: ['', '()'], reject: ['('] },
+    });
+
+  test('round-trips through the export envelope', () => {
+    const result = deserializeGrammar(serializeGrammar(withStrings()));
+    expect(result.ok).toBe(true);
+    expect(result.grammar.testStrings).toEqual({ accept: ['', '()'], reject: ['('] });
+  });
+
+  test('imports a bare object carrying them', () => {
+    const result = deserializeGrammar({
+      variables: ['S'],
+      terminals: ['a'],
+      startSymbol: 'S',
+      productions: [],
+      testStrings: { accept: ['a'], reject: [] },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.grammar.testStrings).toEqual({ accept: ['a'], reject: [] });
+  });
+
+  test('accepts a grammar exported BEFORE test strings existed', () => {
+    // Backward compatibility: every file exported by an earlier build has no
+    // such key, and those must keep importing cleanly.
+    const result = deserializeGrammar({
+      variables: ['S'],
+      terminals: ['a'],
+      startSymbol: 'S',
+      productions: [],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.grammar.testStrings).toEqual({ accept: [], reject: [] });
+  });
+
+  test('rejects a malformed testStrings field', () => {
+    const base = { variables: ['S'], terminals: ['a'], startSymbol: 'S', productions: [] };
+    expect(deserializeGrammar({ ...base, testStrings: [] }).ok).toBe(false);
+    expect(deserializeGrammar({ ...base, testStrings: 'a' }).ok).toBe(false);
+    expect(deserializeGrammar({ ...base, testStrings: { accept: [1] } }).ok).toBe(false);
+    expect(deserializeGrammar({ ...base, testStrings: { reject: 'a' } }).ok).toBe(false);
   });
 });

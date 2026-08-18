@@ -25,9 +25,12 @@
  *     - Timestamps come from now() rather than from Node: the database is a
  *       single clock for every instance, and its microsecond resolution
  *       keeps rapid consecutive saves from tying in the ordering.
- *     - test_strings is never selected. The column exists for the phase that
- *       will use it, but the document contract has no such field, so a
- *       SELECT * here would silently add a key to every document.
+ *     - test_strings holds the author's expected accept/reject lists, in the
+ *       same {accept, reject} shape data/samples.json uses. It is a JSONB
+ *       document like the rest of the grammar for the same reason: it is
+ *       always read and written whole, and nothing ever queries inside it.
+ *       Rows written before the column was read still return the empty
+ *       lists, because the column has always carried a NOT NULL DEFAULT.
  *     - ownerId IS part of the document, added deliberately (not by a stray
  *       SELECT *) when accounts arrived: the browser needs it to tell "mine"
  *       from "my student's" without a second request. ownerTeacherId is NOT —
@@ -93,6 +96,7 @@ const DOCUMENT_COLUMNS = `id,
             terminals,
             start_symbol,
             productions,
+            test_strings,
             created_at,
             updated_at`;
 
@@ -111,6 +115,7 @@ function toDocument(row) {
     terminals: row.terminals,
     startSymbol: row.start_symbol,
     productions: row.productions,
+    testStrings: row.test_strings,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };
@@ -154,6 +159,7 @@ function grammarValues(grammar) {
     JSON.stringify(grammar.terminals),
     grammar.startSymbol,
     JSON.stringify(grammar.productions),
+    JSON.stringify(grammar.testStrings),
   ];
 }
 
@@ -229,6 +235,7 @@ export async function get(id) {
             g.terminals,
             g.start_symbol,
             g.productions,
+            g.test_strings,
             g.created_at,
             g.updated_at,
             owner.username   AS owner_username,
@@ -267,8 +274,8 @@ export async function get(id) {
  */
 export async function create(grammar, ownerId) {
   const { rows } = await query(
-    `INSERT INTO grammars (id, owner_id, name, description, variables, terminals, start_symbol, productions)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8::jsonb)
+    `INSERT INTO grammars (id, owner_id, name, description, variables, terminals, start_symbol, productions, test_strings)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8::jsonb, $9::jsonb)
      RETURNING ${DOCUMENT_COLUMNS}`,
     [crypto.randomUUID(), ownerId, ...grammarValues(grammar)]
   );
@@ -312,6 +319,7 @@ export async function update(id, grammar, { ownerId } = {}) {
             terminals    = $5::jsonb,
             start_symbol = $6,
             productions  = $7::jsonb,
+            test_strings = $8::jsonb,
             updated_at   = now()
       WHERE id = $1${ownerPredicate}
      RETURNING ${DOCUMENT_COLUMNS}`,

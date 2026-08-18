@@ -14,8 +14,11 @@ CFG Studio follows the educational philosophy of classroom tools like **JFLAP**,
 - **Grammar editor** — define the 4-tuple G = (V, Σ, P, S) through friendly form controls: dynamic production rows with per-row ε insertion, precise inline parse feedback, symbol chips, a live textbook-style grammar overview, and draft autosave in the browser so work survives reloads.
 - **Live validation** — errors (missing/undeclared start symbol, undefined symbols, invalid names, duplicates…) and warnings (unreachable variables, non-generating variables, unused terminals, empty language) with descriptive, student-oriented messages, re-checked on every keystroke.
 - **CNF conversion** — the complete classic pipeline **START → TERM → BIN → DEL → UNIT → CLEANUP** in the order that provably avoids exponential blow-up. Every stage shows exactly which rules were added, removed or replaced *and why*, with the full intermediate grammar available at each step.
+- **Two parser engines, your choice** — parse the grammar **directly** (Earley, no conversion needed) or **via Chomsky Normal Form** (CYK), chosen on the simulator screen and labelled by what each one does rather than by its name. A third option runs **both and compares** them: the verdict is always identical — they decide the same language — while the timings are not, which is what makes the comparison worth showing.
 - **CYK simulator** — the Cocke–Younger–Kasami algorithm animated cell by cell: the current cell, the two source cells and the rules being used are highlighted while a live caption explains each step. Play / pause / step forward / step back / skip / speed controls. Verdict: **Accepted** or **Rejected**.
-- **Parse tree** — reconstructed from the CYK table's backpointers and rendered as clean SVG: centred tidy layout, pan by dragging, zoom with the wheel or buttons, fit-to-view, and standalone **SVG export**. The leftmost derivation encoded by the tree is listed alongside.
+- **Parse tree** — rendered as clean SVG: centred tidy layout, pan by dragging, zoom with the wheel or buttons, fit-to-view, and standalone **SVG export**, with the leftmost derivation listed alongside. Earley's tree is labelled with **the symbols you declared**; CYK's with the **converted** grammar's, where names like `X1` come from the conversion — the tree footer says which you are looking at, and after a compare run a toggle flips between the two.
+- **Saved test strings** — a grammar carries its own `{accept, reject}` expectations, saved, exported and imported along with it (the same shape the built-in samples use). Only the expected outcome is stored, never which engine produced it.
+- **Batch run** — run up to 50 strings, or every saved test string, in one press. Execution is **asynchronous**: one string at a time with a live progress bar and a working Cancel, rather than a loop that freezes the page. Results come back as a table of *string / result / expected / match* with a `7 / 8 passed` summary, and clicking any row opens that string in the simulator. Together with saved test strings this is **regression testing for a grammar**: change a rule, press one button, see immediately whether something that used to work has broken.
 - **Sample grammars** — Balanced Parentheses, aⁿbⁿ, Arithmetic Expressions, Simple Expression Grammar, Palindromes, Equal numbers of a's and b's — each with suggested accept/reject test strings, loadable with one click.
 - **Save / Load / Import / Export** — grammars persist server-side in PostgreSQL behind a REST API; any grammar can be exported to a JSON file and imported back.
 - **Accounts and roles** — an admin/teacher/student hierarchy with server-side sessions. Each account is created by the role above it (there is no public sign-up), students' grammars are private to them, and a teacher can read — but never alter — the work of their own students. See [User accounts and roles](#user-accounts-and-roles).
@@ -87,7 +90,7 @@ Then copy `.env.example` to `.env` and fill in both URLs. No schema or migration
 ```bash
 npm run dev     # development server with auto-reload  →  http://localhost:3000
 npm start       # production-style start
-npm test        # run the full Jest suite (159 tests)
+npm test        # run the full Jest suite (552 tests)
 npm run test:coverage   # tests + coverage report
 ```
 
@@ -124,7 +127,9 @@ Because the run shares one schema, `npm test` cannot be run twice concurrently o
 │   ├── validator.js         #   semantic validation + reachability/generating analyses
 │   ├── cnf.js               #   six-stage CNF conversion with step trace
 │   ├── cyk.js               #   CYK with backpointers + animation trace
-│   └── parser.js            #   parse-tree reconstruction, leftmost derivation
+│   ├── parser.js            #   parse-tree reconstruction, leftmost derivation
+│   ├── earley.js            #   Earley chart parser — no CNF conversion needed
+│   └── earley-tree.js       #   parse tree in the ORIGINAL grammar
 ├── routes/                  # API route tables
 ├── controllers/             # thin HTTP request/response handling
 ├── middleware/              # requireAuth (cookie → req.user), requireRole
@@ -144,8 +149,9 @@ Because the run shares one schema, `npm test` cannot be run twice concurrently o
 ├── public/
 │   ├── css/styles.css       # academic theme on top of Bootstrap
 │   └── js/                  # app shell, view modules, SVG tree renderer, step player
+│       └── engines.js       #   which engine runs on which grammar, and its timing
 ├── docs/algorithms.md       # theory, pseudo-code, complexity for every algorithm
-└── tests/                   # 9 Jest suites, 414 tests, shared fixtures
+└── tests/                   # 10 Jest suites, 552 tests, shared fixtures
 ```
 
 ## User accounts and roles
@@ -213,7 +219,9 @@ Full documentation — *theory, pseudo-code, complexity and implementation notes
 3. **CNF conversion** — START → TERM → BIN → DEL (nullable-set fixpoint + subset expansion) → UNIT (unit-pair closure) → CLEANUP, polynomial overall *because* BIN runs before DEL.
 4. **CYK** — the O(n³·|P|) dynamic program over CNF; every table entry keeps all its derivations (backpointers), and a granular step trace drives the UI animation.
 5. **Parse-tree reconstruction** — an O(n) top-down walk along the backpointers; the leftmost derivation is its pre-order traversal.
-6. **Tree layout** — simplified Reingold–Tilford (leaf slots + centre-over-children), rendered as hand-rolled SVG with viewBox-based pan/zoom.
+6. **Earley recognition** — the O(n³) chart parser that needs no normal form at all: predict / scan / complete over n+1 columns, with the Aycock–Horspool repair for nullable symbols and all derivations kept as backpointers.
+7. **Earley parse-tree reconstruction** — the same walk over the chart's backpointers, producing an n-ary tree in the **original** grammar; the node shape is deliberately identical to the CYK one, so the renderer and every tree helper accept both unchanged.
+8. **Tree layout** — simplified Reingold–Tilford (leaf slots + centre-over-children), rendered as hand-rolled SVG with viewBox-based pan/zoom.
 
 ## Testing
 
@@ -221,11 +229,12 @@ Full documentation — *theory, pseudo-code, complexity and implementation notes
 npm test
 ```
 
-Nine suites, **414 tests**, covering the grammar model, the validator (asserted by stable error codes), every CNF stage plus the full pipeline, CYK, the Earley parser, parse trees, authentication, authorization and the HTTP API (supertest against a throw-away PostgreSQL schema). Four test strategies deserve mention:
+Ten suites, **552 tests**, covering the grammar model and its saved test strings, the validator (asserted by stable error codes), every CNF stage plus the full pipeline, CYK, the Earley parser, parse trees, the shipped sample grammars, authentication, authorization and the HTTP API (supertest against a throw-away PostgreSQL schema). Five test strategies deserve mention:
 
 - **Language preservation:** a brute-force derivation enumerator (`tests/helpers.js`) proves L(G) = L(CNF(G)) for all strings up to a length bound on several grammars.
 - **Exhaustive agreement:** CYK's verdict is compared against the enumerated language for *every* string over {a, b} up to length 5.
 - **The permission matrix, exhaustively:** every (role, action, target) triple is asserted against `canAccess` as a plain table. A test that only exercises the endpoints someone remembered to write proves nothing about the combination they forgot.
+- **The shipped samples, run for real:** every sample grammar in `data/samples.json` has its declared accept/reject strings actually run — through *both* engines, which must agree. The cross-checks elsewhere use hand-written fixtures, so nothing previously connected them to the file the application serves; a string filed under the wrong heading would have shipped in silence.
 - **Scope equivalence:** the list queries are pinned to that policy empirically — rows owned by every fixture user are inserted, the real SQL runs, and the result must equal the set `canAccess` admits one row at a time. A `WHERE` clause that drifts wider than the policy fails.
 
 ## Screenshots

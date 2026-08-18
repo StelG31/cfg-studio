@@ -12,6 +12,7 @@ This document explains every algorithm implemented in `core/` **before** its imp
 6. [The Earley recogniser](#6-the-earley-recogniser) — `core/earley.js`
 7. [Earley parse-tree reconstruction](#7-earley-parse-tree-reconstruction) — `core/earley-tree.js`
 8. [Parse-tree layout and rendering](#8-parse-tree-layout-and-rendering) — `public/js/tree.js`
+9. [Choosing an engine, and measuring the choice](#9-choosing-an-engine-and-measuring-the-choice) — `public/js/engines.js`
 
 ---
 
@@ -422,4 +423,79 @@ This is O(n), produces no crossings, and keeps uniform spacing — visually indi
 - **Interaction** is implemented directly on the SVG `viewBox`: wheel-zoom around the cursor (screen → SVG coordinate conversion via `getBoundingClientRect`), pointer-drag panning, +/− buttons and **fit-to-view** (viewBox reset to the content bounding box with padding). Works with mouse and touch (pointer events).
 - Colours are set as SVG attributes, not CSS classes, so the **Download SVG** export produces a standalone file that renders identically outside the app.
 
+---
 
+## 9. Choosing an engine, and measuring the choice
+
+### Theory
+
+CYK and Earley decide **the same question** — is w ∈ L(G)? — by opposite routes.
+
+CYK is a bottom-up dynamic program that requires Chomsky Normal Form, so the
+grammar must be *converted* first. Conversion is a rewriting of the grammar
+that preserves the language but not the shape: it introduces fresh variables
+(`X1`, `T2`, `S0`…) that the author never wrote, and every parse tree CYK
+produces is therefore expressed in that invented vocabulary.
+
+Earley is a top-down chart parser that imposes no normal form. It runs on the
+grammar exactly as written, and its parse trees carry only the author's own
+symbols and rules.
+
+Both are O(n³) in the worst case, so the choice is not one of asymptotics.
+What differs is the **constant factor**, the **preprocessing** and the **shape
+of the answer**:
+
+| | CYK | Earley |
+|---|---|---|
+| Input grammar | must be in CNF | any valid CFG |
+| Preprocessing | conversion, once per grammar | none |
+| Tree vocabulary | the converted grammar's | the author's own |
+| Tree arity | strictly binary | n-ary, mirrors the rules |
+| Behaviour on unambiguous grammars | always Θ(n³) | often far below the bound |
+
+Because the two share no code path beyond `core/grammar.js`, agreement between
+them is a genuine cross-check rather than a tautology: any string on which
+they differ is a bug in one of the implementations, never a property of the
+grammar. The application treats a disagreement that way — it is reported as a
+defect, not shown as a result.
+
+### What the application measures
+
+`public/js/engines.js` runs a string through one engine or both, and when both
+are asked for it reports **three separate figures**:
+
+1. the Earley parse,
+2. the CYK parse,
+3. the CNF conversion.
+
+The third is deliberately **not** folded into the second. A grammar is
+converted once and the CNF result reused for every subsequent string, so
+charging the conversion to each string would overstate CYK by a factor of
+however many strings were run. Reported separately and labelled *one-off per
+grammar*, the reader can add it back where it belongs: to the first string
+only, or amortised across a batch.
+
+### Measuring something too fast to measure
+
+`performance.now()` is deliberately coarsened by browsers — typically clamped
+to 0.1 ms, and coarser again under privacy hardening. A classroom grammar over
+a 10-character string parses well inside that clamp, so a single sample would
+read `0.000 ms` for both engines: not a fast result, a *missing* one, and
+worthless to a comparison.
+
+`measure()` therefore samples adaptively. It runs the work once for its
+result; if that took less than 1 ms it repeats the call within a ~20 ms budget
+and reports the **mean over the repetitions**, along with the repetition count
+so the figure on screen can say *mean of 172 runs*. The count is displayed
+rather than hidden because a mean of many runs and a single timing are
+different kinds of number, and a reader comparing them deserves to know which
+one they are looking at.
+
+Two caveats worth stating for any measurement taken this way:
+
+- Repetition measures **warm** performance. The JIT has compiled the code and
+  the caches are hot, which flatters both engines — equally, but it is not
+  cold-start cost.
+- The batch runner yields to the browser between strings, so its wall-clock
+  duration includes that yielding and is **not** a parsing measurement. Use
+  the per-string figures, not the time the batch appears to take.

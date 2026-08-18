@@ -60,6 +60,17 @@ const els = {};
 
 let draftTimer = null;
 
+/**
+ * True while a save request is in flight.
+ *
+ * A save POSTs a new document whenever grammarId is still null, so two
+ * overlapping runs create two documents — and the second one is invisible
+ * until the list is next refreshed. Both triggers can repeat faster than the
+ * request returns: a double-click on Save, and holding Ctrl+S, where key
+ * repeat fires the handler over and over.
+ */
+let saving = false;
+
 /* ------------------------------------------------------------------------ */
 /* Initialisation                                                            */
 /* ------------------------------------------------------------------------ */
@@ -73,6 +84,7 @@ export function init() {
   els.rowsContainer = document.getElementById('productionRows');
   els.addButton = document.getElementById('btnAddProduction');
   els.newButton = document.getElementById('btnNewGrammar');
+  els.saveButton = document.getElementById('btnSaveGrammar');
   els.overview = document.getElementById('grammarOverview');
   els.validation = document.getElementById('validationPanel');
 
@@ -105,7 +117,7 @@ export function init() {
     showToast('Started a new blank grammar.', 'info');
   });
 
-  document.getElementById('btnSaveGrammar').addEventListener('click', saveGrammar);
+  els.saveButton.addEventListener('click', saveGrammar);
   document.getElementById('btnExportGrammar').addEventListener('click', exportGrammar);
 
   // Ctrl+S / Cmd+S saves the working grammar from anywhere in the app.
@@ -577,6 +589,10 @@ function renderValidation() {
  * this early client check just gives faster feedback).
  */
 async function saveGrammar() {
+  // The flag is the guard, not the disabled button: Ctrl+S never touches the
+  // button, so disabling it alone would leave the keyboard path unprotected.
+  if (saving) return;
+
   const grammar = state.grammar;
   const { valid, errors } = validateGrammar(grammar);
   if (!valid) {
@@ -593,6 +609,8 @@ async function saveGrammar() {
   // moment the fact is worth reporting.
   const borrowedFrom = state.borrowedFrom;
 
+  saving = true;
+  els.saveButton.disabled = true; // the guard, made visible
   setLoading(true, 'Saving grammar…');
   try {
     if (state.grammarId) {
@@ -617,7 +635,11 @@ async function saveGrammar() {
   } catch (err) {
     showToast(`Save failed: ${err.message}`, 'danger', 6000);
   } finally {
+    // finally, not the success path: a failed save must leave Save usable, or
+    // one network blip strands the grammar in the editor with no way out.
     setLoading(false);
+    els.saveButton.disabled = false;
+    saving = false;
   }
 }
 

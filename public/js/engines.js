@@ -65,10 +65,14 @@ export const ENGINE_SHORT = {
 
 /** One line under each choice, explaining the consequence of picking it. */
 export const ENGINE_HINTS = {
-  [ENGINES.EARLEY]: 'Works on any valid grammar. The parse tree uses the symbols you declared.',
+  [ENGINES.EARLEY]:
+    'Works on any valid grammar, and fills its chart column by column. The parse tree ' +
+    'uses the symbols you declared.',
   [ENGINES.CYK]:
     'Shows the table animation step by step. The parse tree uses the converted grammar’s symbols.',
-  [ENGINES.BOTH]: 'The verdict is always the same — the timings are what differ.',
+  [ENGINES.BOTH]:
+    'The verdict is always the same — the timings are what differ. Either visualisation ' +
+    'can be watched.',
 };
 
 /** True for an id this module can actually run. */

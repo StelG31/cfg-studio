@@ -383,7 +383,8 @@
                   </button>
                 </div>
                 <div class="form-text">
-                  Every character must be a terminal of the grammar · maximum 30 characters.
+                  Every character must be a terminal of the grammar · maximum 30 characters ·
+                  the Earley chart animates up to 12.
                 </div>
               </div>
             </div>
@@ -391,6 +392,19 @@
             <div class="card d-none" id="cykSimCard">
               <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
                 <span><i class="bi bi-grid-3x3 me-2" aria-hidden="true"></i><span id="cykSimTitle">Simulation</span></span>
+                <!-- Which of the two traces is on screen. Only a 'both' run
+                     has two, so cyk-view.js reveals this there and hides it
+                     otherwise; choosing one rebuilds the player against that
+                     trace and swaps the grammar panel to match. -->
+                <div class="btn-group btn-group-sm d-none" role="group" id="simTraceChoice"
+                     aria-label="Which visualisation to replay">
+                  <input type="radio" class="btn-check" name="simTrace" id="simTraceEarley"
+                         value="earley" autocomplete="off" checked>
+                  <label class="btn btn-outline-secondary" for="simTraceEarley">Earley chart</label>
+                  <input type="radio" class="btn-check" name="simTrace" id="simTraceCyk"
+                         value="cyk" autocomplete="off">
+                  <label class="btn btn-outline-secondary" for="simTraceCyk">CYK table</label>
+                </div>
                 <!-- Playback chrome: the buttons only delegate to the StepPlayer
                      (animations.js); cyk-view.js wires them and swaps the
                      play/pause icon from the player's progress callback.
@@ -429,6 +443,7 @@
                 </div>
               </div>
               <div class="card-body">
+                <div class="mb-3" id="earleyChartWrap"><!-- Earley chart renders here --></div>
                 <div class="table-responsive mb-3" id="cykTableWrap"><!-- table renders here --></div>
                 <div class="cyk-explanation mb-2" id="cykExplanation" aria-live="polite"></div>
                 <div class="small text-secondary mb-3" id="cykProgress"></div>

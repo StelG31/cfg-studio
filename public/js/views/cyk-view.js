@@ -13,22 +13,24 @@
  *     - shows the grammar each engine actually runs on: the user's own for
  *       Earley, the CNF conversion for CYK (with a one-click inline
  *       conversion when none exists yet),
- *     - runs the string through engines.js, then — for CYK only — REPLAYS
- *       the recorded step trace through the StepPlayer (animations.js):
- *       cells fill one by one, the current cell and its two source cells
- *       are highlighted, the rules used are flashed in the grammar panel,
- *       and every step is explained in a live caption,
+ *     - runs the string through engines.js, then REPLAYS the recorded step
+ *       trace through the StepPlayer (animations.js), which drives either
+ *       visualisation: CYK's table, built here, or Earley's chart, built by
+ *       earley-chart.js. Both fill in one step at a time, highlight what the
+ *       step is working on and where it came from, flash the rules used in
+ *       the grammar panel, and explain themselves in a live caption,
  *     - shows the Accepted / Rejected verdict, the engine comparison table
  *       when both ran, and hands accepted runs to the Parse Tree section.
  *
- *   Earley deliberately has NO animation of its own: its chart visualisation
- *   is a phase of its own, and core/earley.js already records the trace that
- *   phase will replay. Until then Earley shows a verdict and a parse tree.
+ *   A run in 'both' mode has TWO traces, so the card offers a choice of which
+ *   one to watch. Picking one rebuilds the player against that trace and swaps
+ *   the grammar panel to the grammar that engine actually ran on.
  *
  * DOM contract (views/index.html):
  *   #cykEngineChoice #cykGrammarCardTitle
  *   #cykGrammar #cykInput #btnRunCyk #cykSimCard #cykSimTitle #cykPlayback
- *   #cykTableWrap #cykExplanation #cykProgress #cykVerdict #simCompare
+ *   #cykTableWrap #earleyChartWrap #cykExplanation #cykProgress #cykVerdict
+ *   #simCompare #simTraceChoice #simTraceEarley #simTraceCyk
  *   #btnCykPlay #btnCykStepBack #btnCykStepFwd #btnCykSkip #btnCykReset #cykSpeed
  */
 
@@ -48,11 +50,29 @@ import {
   resolveEarleyGrammar,
   runOnce,
 } from '../engines.js';
+import {
+  ANIMATED_MAX_LENGTH,
+  createChartRenderer,
+  renderUnavailable,
+} from '../earley-chart.js';
 
 const els = {};
 let player = null;
 /** Live mirror of each cell's variables while replaying: "i:l" → string[]. */
 let cellContents = new Map();
+/**
+ * Which trace the player is replaying: 'earley', 'cyk', or null when the run
+ * has nothing to replay. Held at module level because the two-trace toggle
+ * has to rebuild the player without re-running the parse.
+ */
+let trace = null;
+
+/**
+ * Operation tints earley-chart.js puts on the shared caption. Listed here too
+ * because the CYK path has to strip them: it writes plain text into the same
+ * element and would otherwise inherit the last chart step's colour.
+ */
+const CAPTION_OP_CLASSES = ['op-predict', 'op-scan', 'op-complete'];
 
 export function init() {
   els.engineChoice = document.getElementById('cykEngineChoice');
@@ -64,6 +84,8 @@ export function init() {
   els.simTitle = document.getElementById('cykSimTitle');
   els.playback = document.getElementById('cykPlayback');
   els.tableWrap = document.getElementById('cykTableWrap');
+  els.chartWrap = document.getElementById('earleyChartWrap');
+  els.traceChoice = document.getElementById('simTraceChoice');
   els.explanation = document.getElementById('cykExplanation');
   els.progress = document.getElementById('cykProgress');
   els.verdict = document.getElementById('cykVerdict');
@@ -82,6 +104,19 @@ export function init() {
   document.getElementById('btnCykSkip').addEventListener('click', () => player?.skipToEnd());
   document.getElementById('btnCykReset').addEventListener('click', () => player?.seek(0));
   els.speed.addEventListener('change', () => player?.setSpeed(Number(els.speed.value)));
+
+  // Switching trace re-runs nothing: the record already holds both results,
+  // so this only tears the player down and builds one against the other one.
+  for (const choice of els.traceChoice.querySelectorAll('input[name="simTrace"]')) {
+    choice.addEventListener('change', () => {
+      if (!state.run) return;
+      trace = choice.value;
+      teardownPlayerOnly();
+      renderGrammarPanel();
+      renderSimulationChrome(state.run);
+      startPlayer(state.run);
+    });
+  }
 
   const invalidate = () => {
     teardownSimulation();
@@ -162,15 +197,20 @@ function renderEngineChoice() {
 /* ------------------------------------------------------------------------ */
 
 /**
- * Show the grammar the SELECTED engine will actually run on.
+ * Show the grammar the engine on screen will actually run on.
  *
  * The two engines answer this differently, and that difference is the whole
  * point of offering the choice: Earley runs the grammar as written, CYK runs
  * its CNF conversion. Showing the wrong one would make the parse tree's
  * symbols inexplicable.
+ *
+ * While a run is up the ANIMATED engine decides, not the selected one: in
+ * 'both' mode the chart flashes rules of the grammar as written, and those
+ * rules have to be the ones on the panel for the flash to land anywhere.
  */
 function renderGrammarPanel() {
-  if (state.engine === ENGINES.EARLEY) {
+  const shown = trace ?? (state.engine === ENGINES.EARLEY ? 'earley' : 'cyk');
+  if (shown === 'earley') {
     renderOriginalGrammarPanel();
     return;
   }
@@ -190,8 +230,10 @@ function renderOriginalGrammarPanel() {
     return;
   }
 
+  // ruleKeys: the chart animation flashes the exact rule each step used, the
+  // same way the CNF panel does for the table.
   els.grammar.innerHTML = `
-    ${grammarHtml(grammar)}
+    ${grammarHtml(grammar, { ruleKeys: true })}
     <hr>
     <div class="small text-secondary">
       start: ${symbolHtml(grammar.startSymbol, grammar)} ·
@@ -273,12 +315,9 @@ function renderCnfGrammarPanel() {
 
 /**
  * Execute a simulation: run the selected engine instantly (engines.js), then
- * — when CYK was one of them — hand its recorded step trace to a fresh
- * StepPlayer for replay. The animation is therefore a faithful replay of
- * what the algorithm did, never a re-implementation of it.
- *
- * Earley has no animation yet, so an Earley-only run shows the verdict
- * straight away and leaves the playback chrome hidden.
+ * hand a recorded step trace to a fresh StepPlayer for replay. The animation
+ * is therefore a faithful replay of what the algorithm did, never a
+ * re-implementation of it.
  */
 function run() {
   // Trimmed on purpose: stray spaces are the most common paste accident,
@@ -298,22 +337,92 @@ function run() {
 
   els.simCard.classList.remove('d-none');
   teardownPlayerOnly();
+  trace = chooseTrace(record);
+  renderGrammarPanel();
   renderSimulationChrome(record);
   renderCompare(record);
+  startPlayer(record);
+}
 
-  // No CYK in this run means no trace to replay: show the verdict directly.
-  if (!record.cyk) {
+/**
+ * Which of the run's traces should be on screen.
+ *
+ * A single-engine run has only one candidate. A 'both' run has two and the
+ * toggle decides — except that an input past the chart's animation cap makes
+ * the chart a dead end, so the table wins on a fresh run and the student is
+ * still shown something working. Choosing the chart explicitly afterwards
+ * still gets the explanation of why it is not animated.
+ *
+ * @param {object} record The run record from engines.js.
+ * @returns {?string} 'earley', 'cyk', or null when nothing can be replayed.
+ */
+function chooseTrace(record) {
+  if (!record.cyk) return record.earley ? 'earley' : null;
+  if (!record.earley) return 'cyk';
+
+  const picked = els.traceChoice.querySelector('input[name="simTrace"]:checked')?.value;
+  const chosen =
+    picked === 'cyk' || record.input.length > ANIMATED_MAX_LENGTH ? 'cyk' : 'earley';
+
+  // Keep the radio honest about what is actually on screen.
+  const button = els.traceChoice.querySelector(
+    chosen === 'cyk' ? '#simTraceCyk' : '#simTraceEarley'
+  );
+  if (button) button.checked = true;
+  return chosen;
+}
+
+/**
+ * Build a player for the chosen trace and start it.
+ *
+ * Both visualisations meet the StepPlayer through the same four callbacks, so
+ * the transport buttons, the speed select and the progress line never learn
+ * which of them is on screen.
+ *
+ * @param {object} record The run record from engines.js.
+ */
+function startPlayer(record) {
+  // The caption is shared, and the chart tints it per operation — clear that
+  // before a CYK trace writes a plain explanation into it.
+  els.explanation.classList.remove(...CAPTION_OP_CLASSES);
+
+  if (trace === null) {
     els.tableWrap.innerHTML = '';
+    els.chartWrap.innerHTML = '';
     renderVerdict({ accepted: record.accepted });
     return;
   }
 
-  const result = record.cyk.result;
+  // Only one visualisation is ever live. Dropping the other keeps the card
+  // from carrying a whole hidden chart or table around between runs.
+  if (trace === 'earley') els.tableWrap.innerHTML = '';
+  else els.chartWrap.innerHTML = '';
+
+  // Past the cap the parse still ran; only the replay is skipped.
+  if (trace === 'earley' && record.input.length > ANIMATED_MAX_LENGTH) {
+    renderUnavailable(els.chartWrap, record.earley.result);
+    renderVerdict({ accepted: record.accepted });
+    return;
+  }
+
+  const engineRun = trace === 'earley' ? record.earley : record.cyk;
+  const renderer =
+    trace === 'earley'
+      ? createChartRenderer({
+          result: record.earley.result,
+          grammar: resolveEarleyGrammar(),
+          chartEl: els.chartWrap,
+          captionEl: els.explanation,
+          grammarEl: els.grammar,
+          onVerdict: renderVerdict,
+        })
+      : { resetView: () => resetView(record.cyk.result), applyStep, stepDelay };
+
   player = new StepPlayer({
-    steps: result.steps,
-    applyStep,
-    resetView: () => resetView(result),
-    stepDelay,
+    steps: engineRun.result.steps,
+    applyStep: renderer.applyStep,
+    resetView: renderer.resetView,
+    stepDelay: renderer.stepDelay,
     onProgress: renderProgress,
   });
   player.setSpeed(Number(els.speed.value));
@@ -326,14 +435,17 @@ function teardownPlayerOnly() {
   player = null;
 }
 
-/** Full reset: player, table DOM, verdict, caption — used on grammar edits. */
+/** Full reset: player, both visualisations, verdict, caption — on grammar edits. */
 function teardownSimulation() {
   teardownPlayerOnly();
+  trace = null;
   els.simCard.classList.add('d-none');
   els.tableWrap.innerHTML = '';
+  els.chartWrap.innerHTML = '';
   els.verdict.innerHTML = '';
   els.compare.innerHTML = '';
   els.explanation.textContent = '';
+  els.explanation.classList.remove(...CAPTION_OP_CLASSES);
   els.progress.textContent = '';
 }
 
@@ -344,18 +456,29 @@ function teardownSimulation() {
 /**
  * Show only the parts of the simulation card the run can actually fill.
  *
- * The playback controls, the table and the running caption all belong to the
- * CYK trace; a run without CYK in it has none of them, and leaving them on
- * screen would offer buttons that drive nothing.
+ * The playback controls and the running caption belong to a trace being
+ * replayed; a run with none of them — or one whose chart is past its
+ * animation cap — has nothing for them to drive, and leaving them on screen
+ * would offer buttons that do nothing.
  *
  * @param {object} record The run record from engines.js.
  */
 function renderSimulationChrome(record) {
-  const hasTrace = record.cyk !== null;
+  const overCap = trace === 'earley' && record.input.length > ANIMATED_MAX_LENGTH;
+  const hasTrace = trace !== null && !overCap;
+
   els.playback.classList.toggle('d-none', !hasTrace);
-  els.tableWrap.classList.toggle('d-none', !hasTrace);
   els.explanation.classList.toggle('d-none', !hasTrace);
   els.progress.classList.toggle('d-none', !hasTrace);
+
+  els.tableWrap.classList.toggle('d-none', trace !== 'cyk');
+  // The chart wrapper stays visible for an over-cap Earley run: that is where
+  // the explanation of why there is no animation goes.
+  els.chartWrap.classList.toggle('d-none', trace !== 'earley');
+
+  // Only a run with both results has a second trace to offer.
+  els.traceChoice.classList.toggle('d-none', !(record.earley && record.cyk));
+
   els.simTitle.textContent = hasTrace ? 'Simulation' : 'Result';
 }
 
@@ -577,9 +700,9 @@ function applyStep(step, { animate }) {
  * The Accepted/Rejected banner; accepted runs get the "Show parse tree"
  * button that hands over to the tree section (which reads state.run).
  *
- * Takes only {accepted} so it serves both callers: CYK's trace passes its
- * 'verdict' step, and an Earley run — which has no trace — passes the run
- * record's verdict directly.
+ * Takes only {accepted} so it serves every caller: either trace passes its
+ * own 'verdict' step, and a run with no animation to replay — no trace at
+ * all, or a chart past its cap — passes the run record's verdict directly.
  *
  * @param {{accepted: boolean}} step The verdict to display.
  */

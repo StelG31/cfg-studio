@@ -349,6 +349,8 @@ Each column holds O(|P| · n) distinct items — a production, a dot and an orig
 
 CFG Studio caps the input at 30 characters, keeping the recorded trace bounded and the chart readable.
 
+The *animation* stops earlier, at **12 characters** (`ANIMATED_MAX_LENGTH` in `public/js/earley-chart.js`). The two caps measure different things: 30 is what the algorithm can compute while staying readable, 12 is what a person can follow. Earley records several times as many steps as CYK for the same input — a four-character string already runs to around a hundred where CYK manages twenty — and each step concerns a whole dotted rule rather than a set of variables. Beyond 12 the parse still runs in full, and only the step-by-step replay is skipped; an accepted string keeps its complete parse tree (§7), which is the part that carries the structure.
+
 ### Implementation details (`core/earley.js`)
 
 - `runEarley(grammar, input)` returns `{accepted, input, n, startSymbol, chart, steps}` — plain JSON throughout, so the result travels over the REST API unchanged.
@@ -357,6 +359,7 @@ CFG Studio caps the input at 30 characters, keeping the recorded trace bounded a
 - Items are deduplicated per column on a key of (production, dot, origin) joined with U+001F — the same collision-free separator `productionKey` uses.
 - Every item keeps **all** the derivations that reached it, not just the first: that preserves ambiguity information and gives §7 its backpointers. A derivation is `{type:'scan', back}` or `{type:'complete', back, child}`, where `back` points at the same production one dot earlier and `child` at the completed item that was consumed.
 - Besides the chart, `runEarley` emits a **step trace** for the animation: `begin` → `predict` / `scan` / `complete` per operation → `column-done` per column → `verdict`. Completions produced by the ε repair carry `nullableRepair: true` and say so in their explanation, so the ε case is visible to the reader instead of buried in the machinery.
+- The chart visualisation (`public/js/earley-chart.js`) **replays that trace and re-implements nothing**, exactly as the CYK table does. Two details of the chart make it possible. Items are only ever appended to a column, so whatever a prefix of the trace has discovered is always a prefix of the column's final item list — one counter per column is therefore enough state to redraw any point in the replay, which is what lets the shared `StepPlayer` seek backwards by resetting and silently fast-forwarding. And although a `complete` step records only the items it advanced, the item it advanced *from* is recovered exactly from the backpointers: the endpoint of a `{back, child}` pair that is not the step's own item is the partner. That is what lets the animation highlight the source item in an arbitrarily earlier column — the one respect in which the chart is harder to follow than the table, where the two sources of a cell are always adjacent.
 
 ---
 

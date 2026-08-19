@@ -770,8 +770,9 @@
                     <em>Chomsky Normal Form</em>, one explained step at a time.
                   </li>
                   <li class="mb-2">
-                    In the <a href="#cyk">Simulator</a>, type a string and watch the algorithm
-                    fill its table cell by cell until the verdict.
+                    In the <a href="#cyk">Simulator</a>, type a string and pick an engine: watch
+                    Earley build its chart column by column, or CYK fill its table cell by cell,
+                    until the verdict.
                   </li>
                   <li>
                     If the string is accepted, explore its derivation in the
@@ -855,6 +856,15 @@
                     through six classic stages — START, TERM, BIN, DEL, UNIT, CLEANUP — each shown
                     with the rules it adds or removes and why.
                   </dd>
+                  <dt><i class="bi bi-layout-three-columns me-1" aria-hidden="true"></i>Earley simulator</dt>
+                  <dd class="mb-3">
+                    Parses the grammar exactly as written — no Chomsky Normal Form conversion
+                    first. It builds one column per input position, filled with dotted items
+                    <code>A → α • β (j)</code> meaning "a rule of A began at column j and α has
+                    matched since", using three operations: PREDICT, SCAN and COMPLETE. The chart
+                    animation replays those steps, colours each operation, and shows where a
+                    COMPLETE reaches back to.
+                  </dd>
                   <dt><i class="bi bi-grid-3x3 me-1" aria-hidden="true"></i>CYK simulator</dt>
                   <dd class="mb-3">
                     The Cocke–Younger–Kasami dynamic-programming algorithm decides membership in
@@ -864,8 +874,9 @@
                   </dd>
                   <dt><i class="bi bi-diagram-2 me-1" aria-hidden="true"></i>Parse tree</dt>
                   <dd class="mb-0">
-                    Reconstructed from the CYK table's backpointers; shows the derivation tree of
-                    the CNF grammar together with the leftmost derivation it encodes.
+                    Reconstructed from the backpointers the parse left behind — the CYK table or
+                    the Earley chart — and shown with the leftmost derivation it encodes. Earley
+                    labels the tree with the symbols you declared, CYK with the converted ones.
                   </dd>
                 </dl>
               </div>
@@ -878,8 +889,11 @@
               </div>
               <div class="card-body">
                 <ul class="small mb-0">
-                  <li>CYK input strings: at most <strong>30 characters</strong> (the table and the
-                      O(n³) trace must stay readable).</li>
+                  <li>Simulator input strings, either engine: at most <strong>30 characters</strong>
+                      (the CYK table and the O(n³) trace must stay readable).</li>
+                  <li>Earley chart animation: at most <strong>12 characters</strong> (Earley
+                      records several times as many steps as CYK; longer strings still parse,
+                      just without the animation).</li>
                   <li>Grammars: at most <strong>200 productions</strong>, 100 variables,
                       100 terminals — far beyond any classroom example.</li>
                   <li>Only <strong>valid</strong> grammars can be saved on the server; drafts of any

@@ -10,7 +10,7 @@
  *   Pure "data → HTML string" functions; no DOM access, no state.
  */
 
-import { EPSILON } from '/core/grammar.js';
+import { EPSILON, productionKey } from '/core/grammar.js';
 import { escapeHtml } from './ui.js';
 
 /**
@@ -59,10 +59,18 @@ export function productionHtml(production, grammar) {
  * A whole grammar in the classic textbook layout: one line per variable,
  * alternatives joined with |, in order of first appearance.
  *
+ * With `ruleKeys` each ALTERNATIVE is wrapped in a .cyk-rule span carrying
+ * its productionKey, which is what lets an animation flash the single rule a
+ * step used. It is opt-in because the wrapper is pure overhead for the views
+ * that only display a grammar, and because the textbook layout is worth
+ * keeping: the one-production-per-line form the CNF panel uses would make an
+ * Earley grammar read quite differently from the same grammar in the editor.
+ *
  * @param {object} grammar The grammar to render.
+ * @param {{ruleKeys?: boolean}} [options] ruleKeys: tag alternatives for lookup.
  * @returns {string} a .grammar-display div (safe: all symbols escaped).
  */
-export function grammarHtml(grammar) {
+export function grammarHtml(grammar, { ruleKeys = false } = {}) {
   const byLeft = new Map();
   for (const production of grammar.productions) {
     if (!byLeft.has(production.left)) byLeft.set(production.left, []);
@@ -71,7 +79,12 @@ export function grammarHtml(grammar) {
 
   const lines = [...byLeft.entries()].map(([left, alternatives]) => {
     const rhs = alternatives
-      .map((right) => rhsHtml(right, grammar))
+      .map((right) => {
+        const html = rhsHtml(right, grammar);
+        if (!ruleKeys) return html;
+        const key = escapeHtml(productionKey({ left, right }));
+        return `<span class="cyk-rule" data-rule-key="${key}">${html}</span>`;
+      })
       .join(' <span class="arrow">|</span> ');
     return `<div>${symbolHtml(left, grammar)} <span class="arrow">→</span> ${rhs}</div>`;
   });

@@ -101,7 +101,7 @@ Then copy `.env.example` to `.env` and fill in both URLs. No schema or migration
 ```bash
 npm run dev     # development server with auto-reload  →  http://localhost:3000
 npm start       # production-style start
-npm test        # run the full Jest suite (552 tests)
+npm test        # run the full Jest suite (558 tests)
 npm run test:coverage   # tests + coverage report
 npm run bench   # time CYK against Earley on the six sample grammars
 ```
@@ -229,9 +229,12 @@ Endpoints marked ● require a session cookie.
 | POST | `/api/validate` | validate a grammar payload |
 | POST | `/api/cnf` | CNF conversion with the full step trace |
 | POST | `/api/cyk` | run CYK: `{ grammar, input }` → table + trace + verdict |
+| POST | `/api/earley` | run Earley on **any** valid grammar, no conversion: `{ grammar, input }` → chart + trace + verdict |
 | GET | `/healthz` | health check |
 
-The three algorithm endpoints (`/api/validate`, `/api/cnf`, `/api/cyk`) and `/api/examples` are deliberately open: they are stateless, already bounded by the size limits in `services/computeService.js`, hold no user data, and exist to be usable from a script. A session there would protect nothing.
+The four algorithm endpoints (`/api/validate`, `/api/cnf`, `/api/cyk`, `/api/earley`) and `/api/examples` are deliberately open: they are stateless, already bounded by the size limits in `services/computeService.js`, hold no user data, and exist to be usable from a script. A session there would protect nothing.
+
+**The API mirrors `core/`, not the frontend.** The browser runs every one of these algorithms locally, importing the same modules the server does, so no screen depends on any of these endpoints — `/api/earley` least of all, since the simulator parses client-side. They exist so the project is usable programmatically, and so the claim that one implementation serves both sides is demonstrable rather than asserted: `POST /api/earley` with a grammar that is *not* in Chomsky Normal Form returns a parse where `POST /api/cyk` returns `GRAMMAR_NOT_CNF`, which is exactly the difference between the two engines, over HTTP.
 
 Errors always have the shape `{ "error": { "code", "message", "details?" } }` with stable machine-readable codes.
 
@@ -255,7 +258,7 @@ Full documentation — *theory, pseudo-code, complexity and implementation notes
 npm test
 ```
 
-Ten suites, **552 tests**, covering the grammar model and its saved test strings, the validator (asserted by stable error codes), every CNF stage plus the full pipeline, CYK, the Earley parser, parse trees, the shipped sample grammars, authentication, authorization and the HTTP API (supertest against a throw-away PostgreSQL schema). Five test strategies deserve mention:
+Ten suites, **558 tests**, covering the grammar model and its saved test strings, the validator (asserted by stable error codes), every CNF stage plus the full pipeline, CYK, the Earley parser, parse trees, the shipped sample grammars, authentication, authorization and the HTTP API (supertest against a throw-away PostgreSQL schema). Five test strategies deserve mention:
 
 - **Language preservation:** a brute-force derivation enumerator (`tests/helpers.js`) proves L(G) = L(CNF(G)) for all strings up to a length bound on several grammars.
 - **Exhaustive agreement:** CYK's verdict is compared against the enumerated language for *every* string over {a, b} up to length 5.
@@ -305,12 +308,11 @@ The repository ships with a [`render.yaml`](render.yaml) blueprint: one Node web
 
 ## Future improvements
 
-- ~~Map the CNF parse tree back onto the **original grammar's** productions.~~ **Answered from the other end** — rather than mapping a converted tree back, the Earley engine never converts at all, so its tree is already in the grammar as written (`core/earley-tree.js`). Mapping CYK's own tree back would still be a distinct piece of work, but the need it existed to serve is met.
-- Show **all** parse trees of an ambiguous string (the backpointers of *both* engines already store every derivation).
+- Map the CNF parse tree back onto the **original grammar's** productions. Still open, and worth being precise about: this was *sidestepped*, not solved. Earley was added as an alternative engine that produces a tree in the grammar as written (`core/earley-tree.js`), so a student who wants to see their own symbols now has a way to. But CYK's tree is still labelled with the conversion's invented variables, and mapping it back is the same unsolved problem it always was.
+- Show **all** parse trees of an ambiguous string. Open for **both** engines: the CYK table and the Earley chart each already store every derivation in their backpointers, and both renderers still show only the first.
 - Additional transformations: left-recursion elimination, left factoring, Greibach Normal Form.
 - Brute-force derivation explorer for short strings on non-CNF grammars.
-- ~~Swap the storage layer for SQLite/PostgreSQL (one-file change) to enable durable multi-user persistence on serverless platforms.~~ **Done** — and it was indeed a one-file change: `models/grammarStore.js` was rewritten on SQL without touching a single service, controller or route.
-- ~~User accounts~~ **done** (admin/teacher/student, see above) — shareable grammar links are still open.
+- **Shareable grammar links** — a read-only URL that shows one grammar to someone without an account. Nothing of the sort exists today: there is no share token, no visibility column, and no public route. (User accounts themselves are **done** — see [User accounts and roles](#user-accounts-and-roles).)
 - Internationalisation (Greek UI translation).
 
 ## License

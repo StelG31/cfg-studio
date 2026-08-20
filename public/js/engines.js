@@ -25,6 +25,7 @@ import { runCyk } from '/core/cyk.js';
 import { runEarley } from '/core/earley.js';
 import { isCnf, convertToCnf } from '/core/cnf.js';
 import { validateGrammar } from '/core/validator.js';
+import { measure } from './measure.js';
 import { state } from './app.js';
 
 /* ------------------------------------------------------------------------ */
@@ -169,55 +170,14 @@ export function engineAvailability() {
 /* ------------------------------------------------------------------------ */
 
 /**
- * Below this, a single measurement is not worth reporting.
+ * Re-exported so this module keeps the surface its callers already know:
+ * a view asks engines.js how a run is timed and engines.js answers.
  *
- * performance.now() is deliberately clamped by browsers (0.1 ms typically,
- * coarser still with privacy.reduceTimerPrecision), so a short parse can
- * measure exactly 0 — which would empty the comparison table precisely on
- * the small grammars a student actually types.
+ * measure() itself moved to its own import-free file only because the
+ * benchmark script behind docs/algorithms.md §9 runs under Node, where this
+ * module cannot be imported at all — see public/js/measure.js.
  */
-const MIN_MEASURABLE_MS = 1;
-
-/** Upper bound on the extra work a repeat measurement may cost. */
-const REPEAT_BUDGET_MS = 20;
-
-/** Belt and braces: never spin, however fast the clock claims the run was. */
-const MAX_REPS = 2000;
-
-/**
- * Run `work` once for its result, and time it honestly.
- *
- * A run too short to measure is repeated within a small budget and the MEAN
- * reported instead, together with the number of repetitions — so the figure
- * on screen can say "mean of 128 runs" rather than presenting one clamped
- * sample as though it were a measurement.
- *
- * @param {Function} work Zero-argument function to run and time.
- * @returns {{value: *, ms: number, reps: number}}
- */
-export function measure(work) {
-  const started = performance.now();
-  const value = work();
-  let ms = performance.now() - started;
-  let reps = 1;
-
-  if (ms < MIN_MEASURABLE_MS) {
-    const deadline = performance.now() + REPEAT_BUDGET_MS;
-    const repeatStart = performance.now();
-    let n = 0;
-    while (n < MAX_REPS && performance.now() < deadline) {
-      work();
-      n += 1;
-    }
-    const elapsed = performance.now() - repeatStart;
-    if (n > 0) {
-      ms = elapsed / n;
-      reps = n;
-    }
-  }
-
-  return { value, ms, reps };
-}
+export { measure };
 
 /* ------------------------------------------------------------------------ */
 /* Running                                                                   */

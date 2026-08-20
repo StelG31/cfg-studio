@@ -11,14 +11,19 @@
  *     - translation of problems into HttpError responses.
  *
  *   The algorithms themselves run UNCHANGED from core/ — the same files the
- *   browser imports. Endpoints for CNF conversion and CYK are added in their
- *   respective implementation steps.
+ *   browser imports. All four compute endpoints are served from here:
+ *   validate, cnf, cyk and earley.
  */
 
 import { deserializeGrammar } from '../core/grammar.js';
 import { validateGrammar } from '../core/validator.js';
 import { convertToCnf } from '../core/cnf.js';
 import { runCyk, MAX_INPUT_LENGTH } from '../core/cyk.js';
+// Only runEarley: core/earley.js exports a MAX_INPUT_LENGTH of its own, with
+// the same name and the same value of 30. Importing it too would collide with
+// the one above for no gain — LIMITS.testStringLength deliberately follows the
+// CYK constant, and the two caps are documented as moving together.
+import { runEarley } from '../core/earley.js';
 import { HttpError } from '../utils/httpError.js';
 
 /** Hard limits — far above anything a classroom grammar needs. */
@@ -198,6 +203,52 @@ export function cyk(body) {
     return runCyk(grammar, body.input);
   } catch (err) {
     if (err.name === 'CykError') {
+      throw HttpError.badRequest(err.code, err.message);
+    }
+    throw err;
+  }
+}
+
+/**
+ * POST /api/earley — run Earley over {grammar, input}.
+ *
+ * Deliberately the same shape as cyk() above, step for step, because the two
+ * are the same operation asked of different engines. The single difference is
+ * the precondition on the grammar: CYK demands Chomsky Normal Form and rejects
+ * anything else with GRAMMAR_NOT_CNF, while Earley demands only validity —
+ * which parseValidGrammar has already established by the time runEarley is
+ * called. That is the whole point of the endpoint.
+ *
+ * The browser does NOT call this. It imports core/earley.js and parses
+ * locally, exactly as it does for CYK. The endpoint exists so the API mirrors
+ * core/ rather than mirroring the frontend, and so the shared modules are
+ * reachable from a script.
+ *
+ * EarleyError conditions become 400s with their stable codes preserved, the
+ * same way CykError is translated — the core's messages were written for end
+ * users, so the client can show them verbatim.
+ *
+ * @param {*} body Expected shape: { grammar, input }.
+ * @returns {object} runEarley's result (accepted, chart, steps, ...).
+ * @throws {HttpError} 400 MISSING_BODY | MISSING_INPUT | GRAMMAR_INVALID |
+ *                     <any EarleyError code>.
+ */
+export function earley(body) {
+  if (body === undefined || body === null || typeof body !== 'object') {
+    throw HttpError.badRequest('MISSING_BODY', 'Expected a JSON body { grammar, input }.');
+  }
+  const grammar = parseValidGrammar(body.grammar);
+  // This fires before runEarley can, so its own INVALID_INPUT guard is
+  // unreachable from here — exactly as CykError's is on /api/cyk. The core
+  // guard is a safety net for direct callers, and tests/earley.test.js is
+  // where it is covered.
+  if (typeof body.input !== 'string') {
+    throw HttpError.badRequest('MISSING_INPUT', 'The request must include "input" as a string.');
+  }
+  try {
+    return runEarley(grammar, body.input);
+  } catch (err) {
+    if (err.name === 'EarleyError') {
       throw HttpError.badRequest(err.code, err.message);
     }
     throw err;

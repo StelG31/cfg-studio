@@ -204,6 +204,84 @@ describe('CYK endpoint', () => {
   });
 });
 
+describe('Earley endpoint', () => {
+  // Anonymous like the CYK tests above, and for the same reason: running these
+  // without the logged-in `agent` is what asserts the endpoint is open.
+
+  test('POST /api/earley parses a grammar CYK would refuse', async () => {
+    // The point of the endpoint in one test. anbn() is S -> a S b | ε: valid,
+    // but not in Chomsky Normal Form, so /api/cyk rejects it outright (the
+    // test above pins that). Earley takes it as written.
+    const grammar = anbn();
+
+    const refused = await request(app).post('/api/cyk').send({ grammar, input: 'aabb' });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error.code).toBe('GRAMMAR_NOT_CNF');
+
+    const yes = await request(app).post('/api/earley').send({ grammar, input: 'aabb' });
+    expect(yes.status).toBe(200);
+    expect(yes.body.accepted).toBe(true);
+    expect(yes.body.steps.at(-1).type).toBe('verdict');
+
+    const no = await request(app).post('/api/earley').send({ grammar, input: 'abab' });
+    expect(no.status).toBe(200);
+    expect(no.body.accepted).toBe(false);
+  });
+
+  test('POST /api/earley returns the chart the browser would build', async () => {
+    // n + 1 columns is the defining shape of the result (docs/algorithms.md
+    // §6). Asserting it here is what says the HTTP path returns the same
+    // structure the shared core produces in the browser, not a summary of it.
+    const response = await request(app)
+      .post('/api/earley')
+      .send({ grammar: arithmetic(), input: 'a+a*a' });
+    expect(response.status).toBe(200);
+    expect(response.body.accepted).toBe(true);
+    expect(response.body.n).toBe(5);
+    expect(response.body.chart).toHaveLength(6);
+    expect(response.body.startSymbol).toBe('E');
+  });
+
+  test('POST /api/earley rejects an invalid grammar with the full finding list', async () => {
+    const broken = createGrammar({
+      variables: ['S'],
+      terminals: ['a'],
+      startSymbol: 'Q', // undeclared start symbol
+      productions: [{ left: 'S', right: ['a'] }],
+    });
+    const response = await request(app).post('/api/earley').send({ grammar: broken, input: 'a' });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('GRAMMAR_INVALID');
+    expect(response.body.error.details.errors.map((e) => e.code)).toContain('START_NOT_DECLARED');
+  });
+
+  test('POST /api/earley rejects characters outside the alphabet', async () => {
+    const response = await request(app).post('/api/earley').send({ grammar: anbn(), input: 'axb' });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_INPUT_CHAR');
+  });
+
+  test('POST /api/earley rejects an input past the length cap', async () => {
+    const response = await request(app)
+      .post('/api/earley')
+      .send({ grammar: anbn(), input: 'a'.repeat(31) });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INPUT_TOO_LONG');
+  });
+
+  test('POST /api/earley rejects a non-string input', async () => {
+    // MISSING_INPUT, not the core's INVALID_INPUT: the service guards the type
+    // before runEarley is ever called, so EarleyError('INVALID_INPUT') cannot
+    // surface here. That is not an oversight but the CYK pattern mirrored
+    // exactly — CykError('INVALID_INPUT') is unreachable through /api/cyk for
+    // the identical reason. The core guard is covered in tests/earley.test.js,
+    // where it IS reachable.
+    const response = await request(app).post('/api/earley').send({ grammar: anbn(), input: 42 });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('MISSING_INPUT');
+  });
+});
+
 describe('error handling', () => {
   test('unknown API routes yield a JSON 404', async () => {
     const response = await request(app).get('/api/definitely-not-a-route');

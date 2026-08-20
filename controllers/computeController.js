@@ -3,7 +3,7 @@
  * ---------------------------------------------------------------------------
  * Purpose:
  *   HTTP request/response handling for the computation endpoints
- *   (/api/validate, and later /api/cnf, /api/cyk). Controllers stay thin:
+ *   (/api/validate, /api/cnf, /api/cyk, /api/earley). Controllers stay thin:
  *   unwrap the body, call the service, send JSON. All error translation
  *   happens in the service layer and the central error middleware.
  *
@@ -54,4 +54,18 @@ export const postCnf = asyncHandler(async (req, res) => {
  */
 export const postCyk = asyncHandler(async (req, res) => {
   res.json(computeService.cyk(req.body));
+});
+
+/**
+ * POST /api/earley
+ * Body:     { grammar: <any VALID grammar — no CNF needed>, input: string }.
+ * Response: 200 with runEarley's result { accepted, n, chart, steps, ... };
+ *           400 with a stable code (GRAMMAR_INVALID, INVALID_INPUT_CHAR,
+ *           INPUT_TOO_LONG, ...) on any precondition failure.
+ *
+ * Takes req.body whole rather than grammarFromBody(req.body), the same as
+ * postCyk: the payload here is { grammar, input }, not a bare grammar.
+ */
+export const postEarley = asyncHandler(async (req, res) => {
+  res.json(computeService.earley(req.body));
 });

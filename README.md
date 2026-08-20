@@ -1,6 +1,6 @@
 # CFG Studio
 
-An educational web application for the **design and computation of Context-Free Grammars (CFGs)** — create and validate grammars, convert them to Chomsky Normal Form step by step, test string membership with an animated CYK simulation, and explore the resulting parse tree interactively.
+An educational web application for the **design and computation of Context-Free Grammars (CFGs)** — create and validate grammars, convert them to Chomsky Normal Form step by step, test string membership with two independent parser engines (Earley and CYK, each animated step by step), run whole batches of strings as a regression test, and explore the resulting parse tree interactively.
 
 Developed as a Bachelor's Thesis project:
 *“Development of a Web Application for the Design and Computation of Context-Free Grammars (CFGs)”*.
@@ -16,6 +16,7 @@ CFG Studio follows the educational philosophy of classroom tools like **JFLAP**,
 - **CNF conversion** — the complete classic pipeline **START → TERM → BIN → DEL → UNIT → CLEANUP** in the order that provably avoids exponential blow-up. Every stage shows exactly which rules were added, removed or replaced *and why*, with the full intermediate grammar available at each step.
 - **Two parser engines, your choice** — parse the grammar **directly** (Earley, no conversion needed) or **via Chomsky Normal Form** (CYK), chosen on the simulator screen and labelled by what each one does rather than by its name. A third option runs **both and compares** them: the verdict is always identical — they decide the same language — while the timings are not, which is what makes the comparison worth showing.
 - **CYK simulator** — the Cocke–Younger–Kasami algorithm animated cell by cell: the current cell, the two source cells and the rules being used are highlighted while a live caption explains each step. Play / pause / step forward / step back / skip / speed controls. Verdict: **Accepted** or **Rejected**.
+- **Earley chart animation** — the same playback controls driving the other engine's chart: one column per input position, filled with dotted items `A → α • β (j)`, with each PREDICT / SCAN / COMPLETE colour-coded and captioned. A completion highlights the item it reached back to, however many columns earlier that is — the one respect in which the chart is harder to follow than the table, where the two sources are always adjacent. Completions produced by the ε-repair say so, so the subtlest part of the algorithm is visible rather than buried. Above **12 characters** the parse still runs in full and only the replay is skipped.
 - **Parse tree** — rendered as clean SVG: centred tidy layout, pan by dragging, zoom with the wheel or buttons, fit-to-view, and standalone **SVG export**, with the leftmost derivation listed alongside. Earley's tree is labelled with **the symbols you declared**; CYK's with the **converted** grammar's, where names like `X1` come from the conversion — the tree footer says which you are looking at, and after a compare run a toggle flips between the two.
 - **Saved test strings** — a grammar carries its own `{accept, reject}` expectations, saved, exported and imported along with it (the same shape the built-in samples use). Only the expected outcome is stored, never which engine produced it.
 - **Batch run** — run up to 50 strings, or every saved test string, in one press. Execution is **asynchronous**: one string at a time with a live progress bar and a working Cancel, rather than a loop that freezes the page. Results come back as a table of *string / result / expected / match* with a `7 / 8 passed` summary, and clicking any row opens that string in the simulator. Together with saved test strings this is **regression testing for a grammar**: change a rule, press one button, see immediately whether something that used to work has broken.
@@ -36,17 +37,27 @@ CFG Studio follows the educational philosophy of classroom tools like **JFLAP**,
 
 ### The shared algorithm core
 
-The heart of the project is `core/` — five **pure, dependency-free ES modules** (`grammar.js`, `validator.js`, `cnf.js`, `cyk.js`, `parser.js`) with no DOM and no Node APIs. The browser imports them natively (`<script type="module">`), the Express services import the very same files for the REST endpoints, and Jest tests them directly. Every algorithm therefore exists **exactly once** in the codebase, and one test suite covers both the client and the server behaviour.
+The heart of the project is `core/` — seven **pure, dependency-free ES modules** (`grammar.js`, `validator.js`, `cnf.js`, `cyk.js`, `parser.js`, `earley.js`, `earley-tree.js`) with no DOM and no Node APIs. The browser imports them natively (`<script type="module">`), the Express services import the very same files for the REST endpoints, Jest tests them directly, and `npm run bench` times them. Every algorithm therefore exists **exactly once** in the codebase, and one test suite covers both the client and the server behaviour.
 
-### Storage design decision — PostgreSQL with a pure-JavaScript driver
+### Storage design decision — from JSON files to PostgreSQL
 
-Storage began as one JSON file per grammar. That was the right choice for a single-user tool, but two forces made it untenable: hosting platforms give a free web service an **ephemeral filesystem**, so every redeploy silently erased saved work; and the next phase introduces **users, roles and teacher–student relationships**, which are relational by nature and would be miserable to maintain as files.
+This decision was made twice, and both halves belong in the record: the second only makes sense against the first, and the first was not wrong.
 
-The constraint that ruled out SQLite still holds, and PostgreSQL satisfies it. `better-sqlite3` is a **native addon**: any Node-version mismatch on a reviewer's machine falls back to a node-gyp compilation needing Python and a C++ toolchain on Windows — exactly the zero-setup failure this project must avoid. The `pg` driver is **100 % JavaScript**, so the dependency tree still compiles nothing. (`pg-native` exists and is deliberately *not* used, for the same reason.) Password hashing follows the same rule: `node:crypto`'s `scrypt` rather than `bcrypt` or `argon2`, both of which are native.
+**The original decision (v1) — JSON files instead of SQLite.** Grammars are small, self-contained, document-shaped objects (a few KB of variables, terminals and productions) that are always read and written as a whole — there were no relational queries, joins, or concurrent-write workloads that would benefit from SQL. JSON-file storage kept the dependency tree 100 % pure JavaScript: `better-sqlite3` is a native addon, and while prebuilt binaries usually work, any Node-version mismatch on a reviewer's machine falls back to a node-gyp compilation (requiring Python and a C++ toolchain on Windows) — exactly the "zero-setup" failure mode this project must avoid. JSON files were also human-readable, which served the educational goal: a student could open `data/grammars/*.json` and see precisely how a grammar is represented, the storage format being identical to the app's export format. The storage layer (`models/grammarStore.js`, with atomic write-temp-then-rename semantics and strict id validation) was the only module that touched the filesystem, so swapping in a database later was expected to be a one-file change.
+
+**The transition.**
+
+> In the first version, with a single user and no relational needs, JSON files were the appropriate choice. The introduction of accounts and a user hierarchy created relationships requiring queries, so storage moved to PostgreSQL — a change confined to one file, as originally anticipated.
+
+A second force pushed the same way: hosting platforms give a free web service an **ephemeral filesystem**, so every redeploy silently erased saved work.
+
+**Why PostgreSQL specifically.** The constraint that ruled out SQLite still holds, and PostgreSQL satisfies it. The `pg` driver is **100 % JavaScript**, so the dependency tree still compiles nothing. (`pg-native` exists and is deliberately *not* used, for the same reason.) Password hashing follows the same rule: `node:crypto`'s `scrypt` rather than `bcrypt` or `argon2`, both of which are native.
 
 Grammars remain document-shaped. `variables`, `terminals` and `productions` are stored as **JSONB**, because a grammar is always read and written whole and there is never a query like "find every grammar containing rule X" — normalising them into child tables would add joins and buy nothing. The relationships that *are* queried — user to grammars, teacher to students — are real columns with real foreign keys. The export format is unchanged, so a student can still inspect exactly how a grammar is represented by exporting one.
 
 The claim that `models/grammarStore.js` was the only module touching persistence turned out to be true: moving from files to SQL replaced that one file and changed **no service, controller or route**.
+
+**The cost, stated plainly.** The first version ran with `npm install && npm start` on any machine, with no prerequisites at all — clone it, install it, open a browser. **PostgreSQL removes that property.** A reviewer now needs a database provisioned and reachable before the server will start, and the *Database setup* section below exists because of it. This was a conscious trade, made in exchange for multi-user support: accounts, roles and teacher–student relationships are not reasonably expressible as files, and durable saves across redeploys were not achievable without leaving the filesystem. It is the one place the project gave up zero-setup, and it is worth being clear about what survives it — the dependency tree still compiles nothing, so there is still no toolchain, no node-gyp, no Python and no C++ compiler in the picture. The requirement that was added is a *service*, not a build.
 
 ---
 
@@ -92,7 +103,10 @@ npm run dev     # development server with auto-reload  →  http://localhost:300
 npm start       # production-style start
 npm test        # run the full Jest suite (552 tests)
 npm run test:coverage   # tests + coverage report
+npm run bench   # time CYK against Earley on the six sample grammars
 ```
+
+Only the first three need a database. `npm run bench` imports `core/` directly and reads `data/samples.json`, so it runs on a bare clone with nothing configured.
 
 Configuration — copy `.env.example` to `.env` and adjust:
 
@@ -108,6 +122,8 @@ Configuration — copy `.env.example` to `.env` and adjust:
 TLS is taken from the connection string and never overridden in code: use `sslmode=verify-full` for a remote database and `sslmode=disable` for a local one. Prefer `verify-full` over `require` — they give identical verified TLS today, but `require` prints a deprecation warning and will mean *unverified* TLS in `pg` 9.
 
 If `ADMIN_USERNAME` and `ADMIN_PASSWORD` are missing the server still starts and every algorithm, sample and page works; only saving a grammar fails, with `503 SERVER_NOT_CONFIGURED`. Both variables can be cleared once the account exists — the bootstrap never overwrites an existing account, so changing `ADMIN_PASSWORD` later does not reset a live password.
+
+**The size limits are deliberately not environment variables.** They are constants, and each lives next to the thing it protects: `LIMITS` in `services/computeService.js` (100 variables, 100 terminals, 200 productions, 50 symbols per right-hand side, 50 saved test strings per grammar), `MAX_INPUT_LENGTH` in `core/cyk.js` and `core/earley.js` (30 characters, and `computeService` imports the constant rather than repeating the number), `ANIMATED_MAX_LENGTH` in `public/js/earley-chart.js` (12 characters), and `MAX_BATCH_STRINGS` in `public/js/views/batch-view.js` (50). They bound what the algorithms can be asked to do and what stays readable on screen, so an operator raising them by configuration would be changing a documented property of the tool, not tuning a deployment.
 
 ### How the tests isolate themselves
 
@@ -144,14 +160,23 @@ Because the run shares one schema, `npm test` cannot be run twice concurrently o
 │   ├── userStore.js         #   account CRUD
 │   └── sessionStore.js      #   sessions keyed by sha256(token)
 ├── utils/                   # HttpError, asyncHandler, scrypt hashing, session cookie
-├── data/samples.json        # built-in sample grammars (read-only)
-├── views/index.html         # the single-page UI (+ 404 page)
+├── data/samples.json        # built-in sample grammars + their test strings (read-only)
+├── views/
+│   ├── index.html           # the single-page UI (all sections, incl. Help)
+│   └── 404.html
 ├── public/
 │   ├── css/styles.css       # academic theme on top of Bootstrap
-│   └── js/                  # app shell, view modules, SVG tree renderer, step player
-│       └── engines.js       #   which engine runs on which grammar, and its timing
+│   └── js/                  # app shell, SVG tree renderer, step player
+│       ├── engines.js       #   which engine runs on which grammar, and its timing
+│       ├── measure.js       #   ★ the timing method, shared with scripts/benchmark.js
+│       ├── earley-chart.js  #   Earley chart renderer + trace replay
+│       ├── tree.js          #   SVG tree layout, pan/zoom, export
+│       ├── animations.js    #   StepPlayer — playback shared by both simulations
+│       └── views/           #   one module per screen (editor, cnf, cyk, batch,
+│                            #   tree, grammars, users, login)
+├── scripts/benchmark.js     # `npm run bench` — the figures in docs/algorithms.md §9
 ├── docs/algorithms.md       # theory, pseudo-code, complexity for every algorithm
-└── tests/                   # 10 Jest suites, 552 tests, shared fixtures
+└── tests/                   # 10 Jest suites, shared fixtures
 ```
 
 ## User accounts and roles
@@ -206,7 +231,7 @@ Endpoints marked ● require a session cookie.
 | POST | `/api/cyk` | run CYK: `{ grammar, input }` → table + trace + verdict |
 | GET | `/healthz` | health check |
 
-The four algorithm endpoints and `/api/examples` are deliberately open: they are stateless, already bounded by the size limits in `services/computeService.js`, hold no user data, and exist to be usable from a script. A session there would protect nothing.
+The three algorithm endpoints (`/api/validate`, `/api/cnf`, `/api/cyk`) and `/api/examples` are deliberately open: they are stateless, already bounded by the size limits in `services/computeService.js`, hold no user data, and exist to be usable from a script. A session there would protect nothing.
 
 Errors always have the shape `{ "error": { "code", "message", "details?" } }` with stable machine-readable codes.
 
@@ -222,6 +247,7 @@ Full documentation — *theory, pseudo-code, complexity and implementation notes
 6. **Earley recognition** — the O(n³) chart parser that needs no normal form at all: predict / scan / complete over n+1 columns, with the Aycock–Horspool repair for nullable symbols and all derivations kept as backpointers.
 7. **Earley parse-tree reconstruction** — the same walk over the chart's backpointers, producing an n-ary tree in the **original** grammar; the node shape is deliberately identical to the CYK one, so the renderer and every tree helper accept both unchanged.
 8. **Tree layout** — simplified Reingold–Tilford (leaf slots + centre-over-children), rendered as hand-rolled SVG with viewBox-based pan/zoom.
+9. **CYK versus Earley** — the theoretical comparison (CNF requirement, complexity, tree vocabulary and arity) together with its *empirical* confirmation: both engines measured on the six sample grammars and across input lengths up to the 30-character cap, produced by `npm run bench`.
 
 ## Testing
 
@@ -237,20 +263,26 @@ Ten suites, **552 tests**, covering the grammar model and its saved test strings
 - **The shipped samples, run for real:** every sample grammar in `data/samples.json` has its declared accept/reject strings actually run — through *both* engines, which must agree. The cross-checks elsewhere use hand-written fixtures, so nothing previously connected them to the file the application serves; a string filed under the wrong heading would have shipped in silence.
 - **Scope equivalence:** the list queries are pinned to that policy empirically — rows owned by every fixture user are inserted, the real SQL runs, and the result must equal the set `canAccess` admits one row at a time. A `WHERE` clause that drifts wider than the policy fails.
 
+`npm run bench` is **not** part of the suite and never will be. It measures how long the engines take, and a timing is not something a test run should be allowed to fail on — a busy machine would turn a green build red without a line of code having changed. It is a reporting utility for [`docs/algorithms.md` §9](docs/algorithms.md#9-cyk-versus-earley). The one property it does assert is that the two engines agree on every string it runs, because a benchmark comparing a working engine against a broken one would report meaningless numbers; the *correctness* version of that same cross-check lives in the suite, in `tests/samples.test.js`.
+
 ## Screenshots
 
-> *(placeholders — capture after deployment)*
+> *(placeholders — to be captured from the deployed instance. Local captures are deliberately not used: they would show `localhost` and misrepresent the deployed application.)*
 
 | View | Screenshot |
 |---|---|
+| Sign-in screen | `docs/screenshots/login.png` |
 | Grammar editor with live validation | `docs/screenshots/editor.png` |
 | CNF conversion steps | `docs/screenshots/cnf.png` |
+| Animated Earley chart | `docs/screenshots/earley.png` |
 | Animated CYK table | `docs/screenshots/cyk.png` |
 | Interactive parse tree | `docs/screenshots/tree.png` |
+| Batch run with results table | `docs/screenshots/batch.png` |
+| Users screen (role hierarchy) | `docs/screenshots/users.png` |
 
 ## Deployment (Render)
 
-The repository ships with a [`render.yaml`](render.yaml) blueprint: one Node web service that serves both the API and the static frontend (the same Express process — no separate frontend host is needed, and the file-based storage requires a persistent process with a filesystem, which rules out serverless platforms for this architecture).
+The repository ships with a [`render.yaml`](render.yaml) blueprint: one Node web service that serves both the API and the static frontend from the same Express process — no separate frontend host is needed, because the frontend is static files and native ES modules with no build step. Persistence is a managed PostgreSQL instance reached over the network, so the web service itself holds no state and its filesystem may be as ephemeral as the platform likes.
 
 **Step-by-step:**
 
@@ -273,12 +305,12 @@ The repository ships with a [`render.yaml`](render.yaml) blueprint: one Node web
 
 ## Future improvements
 
-- Map the CNF parse tree back onto the **original grammar's** productions.
-- Show **all** parse trees of an ambiguous string (the backpointers already store every derivation).
+- ~~Map the CNF parse tree back onto the **original grammar's** productions.~~ **Answered from the other end** — rather than mapping a converted tree back, the Earley engine never converts at all, so its tree is already in the grammar as written (`core/earley-tree.js`). Mapping CYK's own tree back would still be a distinct piece of work, but the need it existed to serve is met.
+- Show **all** parse trees of an ambiguous string (the backpointers of *both* engines already store every derivation).
 - Additional transformations: left-recursion elimination, left factoring, Greibach Normal Form.
 - Brute-force derivation explorer for short strings on non-CNF grammars.
 - ~~Swap the storage layer for SQLite/PostgreSQL (one-file change) to enable durable multi-user persistence on serverless platforms.~~ **Done** — and it was indeed a one-file change: `models/grammarStore.js` was rewritten on SQL without touching a single service, controller or route.
-- User accounts and shareable grammar links — the `users` and `sessions` tables already exist.
+- ~~User accounts~~ **done** (admin/teacher/student, see above) — shareable grammar links are still open.
 - Internationalisation (Greek UI translation).
 
 ## License

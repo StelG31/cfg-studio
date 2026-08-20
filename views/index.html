@@ -774,9 +774,14 @@
                     Earley build its chart column by column, or CYK fill its table cell by cell,
                     until the verdict.
                   </li>
-                  <li>
+                  <li class="mb-2">
                     If the string is accepted, explore its derivation in the
                     <a href="#tree">Parse Tree</a> — drag to pan, scroll to zoom, export as SVG.
+                  </li>
+                  <li>
+                    Use <a href="#batch">Batch</a> to run many strings at once — or every
+                    test string saved with the grammar — and check them all against what
+                    you expected.
                   </li>
                 </ol>
               </div>
@@ -829,6 +834,70 @@
                   Your work is <strong>auto-saved as a draft</strong> in the browser on every change.
                   Press <kbd>Ctrl</kbd>+<kbd>S</kbd> (or the Save button) to store a valid grammar on
                   the server, and use Export / Import for JSON files.
+                </p>
+              </div>
+            </div>
+
+            <!-- Choosing an engine -->
+            <div class="card mb-4">
+              <div class="card-header">
+                Choosing an engine
+              </div>
+              <div class="card-body">
+                <p class="small">
+                  The <a href="#cyk">Simulator</a> and <a href="#batch">Batch</a> both ask the
+                  same question — is this string in the language? — and both let you choose
+                  <em>how</em> it is answered. The choice is named by what it does, not by whose
+                  algorithm it is:
+                </p>
+                <dl class="mb-3 help-tools">
+                  <dt>Parse the grammar directly — no conversion (Earley)</dt>
+                  <dd class="mb-3">
+                    Works on any valid grammar, and fills its chart column by column. The parse
+                    tree uses the symbols you declared.
+                  </dd>
+                  <dt>Convert to Chomsky Normal Form first, then parse (CYK)</dt>
+                  <dd class="mb-3">
+                    Shows the table animation step by step. The parse tree uses the converted
+                    grammar’s symbols, so names like <code>X1</code> come from the conversion,
+                    not from you. Needs the grammar converted first.
+                  </dd>
+                  <dt>Run both and compare</dt>
+                  <dd class="mb-0">
+                    The verdict is always the same — the timings are what differ. Either
+                    visualisation can be watched, and the parse tree offers a toggle between
+                    the two vocabularies.
+                  </dd>
+                </dl>
+                <p class="small text-secondary mb-0">
+                  Compare mode reports <strong>three</strong> figures: the Earley parse, the CYK
+                  parse, and the CNF conversion — the last kept separate because a grammar is
+                  converted <em>once</em> and reused for every string after it. If the two engines
+                  ever disagree, that is a <strong>bug in one of them</strong>, never a property
+                  of your grammar, and it is reported as a defect rather than shown as a result.
+                </p>
+              </div>
+            </div>
+
+            <!-- Batch -->
+            <div class="card mb-4">
+              <div class="card-header">
+                Batch — regression testing for a grammar
+              </div>
+              <div class="card-body">
+                <p class="small">
+                  Type up to <strong>50</strong> strings, one per line, or press
+                  <strong>Run saved test strings</strong> to use the accept/reject lists stored
+                  with the grammar. Results come back as a table of
+                  <em>string / result / expected / match</em> with a <code>7 / 8 passed</code>
+                  summary; click any row to open that string in the
+                  <a href="#cyk">Simulator</a>.
+                </p>
+                <p class="small mb-0 text-secondary">
+                  Strings are run <strong>one at a time</strong>, so the progress bar keeps
+                  moving and <strong>Cancel</strong> works — the page never freezes. Change a
+                  rule, press one button, and see immediately whether something that used to
+                  work has broken.
                 </p>
               </div>
             </div>
@@ -891,14 +960,80 @@
                 <ul class="small mb-0">
                   <li>Simulator input strings, either engine: at most <strong>30 characters</strong>
                       (the CYK table and the O(n³) trace must stay readable).</li>
-                  <li>Earley chart animation: at most <strong>12 characters</strong> (Earley
-                      records several times as many steps as CYK; longer strings still parse,
-                      just without the animation).</li>
+                  <li>Earley chart animation: at most <strong>12 characters</strong>. Not because
+                      the parse gets slow — it does not — but because twelve columns of dotted
+                      items are already wider than the screen. Longer strings still parse in
+                      full, and an accepted one still gets its complete parse tree; only the
+                      step-by-step replay is skipped.</li>
                   <li>Grammars: at most <strong>200 productions</strong>, 100 variables,
-                      100 terminals — far beyond any classroom example.</li>
+                      100 terminals, and 50 symbols on any one right-hand side — far beyond any
+                      classroom example.</li>
+                  <li>Batch: at most <strong>50 strings</strong> per run. Extra lines are ignored
+                      and the run says so.</li>
+                  <li>Saved test strings: at most <strong>50 per grammar</strong>, accepted and
+                      rejected combined — the same cap as a batch run, so “run all saved test
+                      strings” can never assemble a batch the runner would refuse. Each may be
+                      at most 30 characters, since a longer one could never be run.</li>
                   <li>Only <strong>valid</strong> grammars can be saved on the server; drafts of any
                       state live in your browser.</li>
                 </ul>
+              </div>
+            </div>
+
+            <!-- Accounts and roles -->
+            <div class="card mb-4">
+              <div class="card-header">
+                Accounts and roles
+              </div>
+              <div class="card-body">
+                <p class="small">
+                  There are three roles, and each account is created by the one above it:
+                </p>
+                <p class="small text-center mb-3">
+                  <code>admin</code> → creates → <code>teacher</code> → creates →
+                  <code>student</code>
+                </p>
+                <p class="small">
+                  <strong>There is no sign-up page.</strong> An account only ever comes into
+                  existence from the role above it, so no student exists without a teacher and
+                  nobody can create an account on a public URL.
+                </p>
+                <table class="table table-sm align-middle help-table mb-3">
+                  <thead>
+                    <tr>
+                      <th scope="col">Can…</th>
+                      <th scope="col">admin</th>
+                      <th scope="col">teacher</th>
+                      <th scope="col">student</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <th scope="row" class="fw-normal">Create accounts</th>
+                      <td>teachers &amp; students</td>
+                      <td>own students</td>
+                      <td>no</td>
+                    </tr>
+                    <tr>
+                      <th scope="row" class="fw-normal">See other people’s grammars</th>
+                      <td>all</td>
+                      <td>own students’, read-only</td>
+                      <td>no</td>
+                    </tr>
+                    <tr>
+                      <th scope="row" class="fw-normal">Use the editor and every algorithm</th>
+                      <td>yes</td>
+                      <td>yes</td>
+                      <td>yes</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p class="small text-secondary mb-0">
+                  Your own grammars are private to you. A teacher may <em>read</em> a student’s
+                  work but never change or delete it, and saving a copy leaves the original
+                  untouched. Everyone can change their own password. Signing out takes effect
+                  immediately — sessions live on the server, not in the token.
+                </p>
               </div>
             </div>
 

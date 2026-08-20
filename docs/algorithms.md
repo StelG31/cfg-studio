@@ -12,7 +12,7 @@ This document explains every algorithm implemented in `core/` **before** its imp
 6. [The Earley recogniser](#6-the-earley-recogniser) — `core/earley.js`
 7. [Earley parse-tree reconstruction](#7-earley-parse-tree-reconstruction) — `core/earley-tree.js`
 8. [Parse-tree layout and rendering](#8-parse-tree-layout-and-rendering) — `public/js/tree.js`
-9. [Choosing an engine, and measuring the choice](#9-choosing-an-engine-and-measuring-the-choice) — `public/js/engines.js`
+9. [CYK versus Earley](#9-cyk-versus-earley) — `public/js/engines.js`, `scripts/benchmark.js`
 
 ---
 
@@ -349,7 +349,9 @@ Each column holds O(|P| · n) distinct items — a production, a dot and an orig
 
 CFG Studio caps the input at 30 characters, keeping the recorded trace bounded and the chart readable.
 
-The *animation* stops earlier, at **12 characters** (`ANIMATED_MAX_LENGTH` in `public/js/earley-chart.js`). The two caps measure different things: 30 is what the algorithm can compute while staying readable, 12 is what a person can follow. Earley records several times as many steps as CYK for the same input — a four-character string already runs to around a hundred where CYK manages twenty — and each step concerns a whole dotted rule rather than a set of variables. Beyond 12 the parse still runs in full, and only the step-by-step replay is skipped; an accepted string keeps its complete parse tree (§7), which is the part that carries the structure.
+The *animation* stops earlier, at **12 characters** (`ANIMATED_MAX_LENGTH` in `public/js/earley-chart.js`). The two caps measure different things: 30 is what the algorithm can compute while staying readable, 12 is what a person can follow.
+
+What makes the chart the harder of the two to watch is *not* raw step count. Measured (§9), a four-character input records 20 steps on `S → a S b | ε` and 59 on `S → a S b | b S a | S S | ε`, against CYK's 22 — comparable; and by twelve characters CYK is recording rather more than Earley (366 against 52–304). The difficulty is in what a step is and where it lands: an Earley step concerns a whole dotted rule with an origin rather than a set of variables, a column is a variable-length list instead of one cell of a neat triangle — so twelve columns are already wider than the screen — and a COMPLETE reaches back to an arbitrarily earlier column instead of the two adjacent cells CYK always combines. Beyond 12 the parse still runs in full, and only the step-by-step replay is skipped; an accepted string keeps its complete parse tree (§7), which is the part that carries the structure.
 
 ### Implementation details (`core/earley.js`)
 
@@ -428,7 +430,7 @@ This is O(n), produces no crossings, and keeps uniform spacing — visually indi
 
 ---
 
-## 9. Choosing an engine, and measuring the choice
+## 9. CYK versus Earley
 
 ### Theory
 
@@ -502,3 +504,157 @@ Two caveats worth stating for any measurement taken this way:
 - The batch runner yields to the browser between strings, so its wall-clock
   duration includes that yielding and is **not** a parsing measurement. Use
   the per-string figures, not the time the batch appears to take.
+
+### How the figures below were produced
+
+`npm run bench` (`scripts/benchmark.js`). It imports `core/cnf.js`,
+`core/cyk.js` and `core/earley.js` unchanged — the same files the browser and
+the Express services import — and times them with the same `measure()` the
+simulator uses (`public/js/measure.js`, extracted so that one implementation
+serves both). It is a reporting utility and is deliberately **not** part of
+`npm test`: a timing is not something a test suite should be allowed to fail
+on. The one thing it does assert is that the two engines agree on every
+string, because a benchmark comparing a working engine against a broken one
+would report meaningless numbers.
+
+Three properties of the method matter when reading the tables:
+
+- **Warm, not cold.** Each grammar gets 200 warm-up iterations before anything
+  is recorded. Cold, the very first `convertToCnf` reads ~1.9 ms and every
+  later one ~0.15 ms; that factor of twelve is V8 compiling the function, not
+  the conversion costing anything.
+- **Node, not the browser.** Node's `performance.now()` is not coarsened, so
+  these are finer-grained than the figures the application shows on screen and
+  are *not* the same numbers. Same method, same modules, different clock.
+- **Timings are noisy above 1 ms; step counts are not.** `measure()` only
+  repeats a run that came in under 1 ms, so every larger figure is a single
+  sample. Across three consecutive runs the millisecond columns moved by up to
+  ~30 % at n = 30 (CYK on aⁿbⁿ: 1.884 / 2.457 / 2.102 ms), while every step
+  count was identical to the digit. **The step counts are the evidence; the
+  timings are the illustration.**
+
+Figures below are from one run on Node v22.13.0, win32 x64, AMD Ryzen 7 3800X.
+Absolute values are machine-specific. Step counts and ratios are not.
+
+### Measured: the six sample grammars
+
+Each grammar run over its own saved accept/reject strings — the strings the
+application actually ships — with the mean per string reported.
+
+| Grammar | P | CNF P | Conversion | Earley | steps | CYK | steps |
+|---|---|---|---|---|---|---|---|
+| Balanced Parentheses | 3 | 9 | 0.143 ms | 0.097 ms | 36 | 0.022 ms | 18 |
+| aⁿbⁿ | 2 | 7 | 0.129 ms | 0.016 ms | 16 | 0.013 ms | 18 |
+| Arithmetic Expressions | 6 | 20 | 0.210 ms | 0.037 ms | 26 | 0.016 ms | 22 |
+| Simple Expression Grammar | 4 | 15 | 0.162 ms | 0.029 ms | 22 | 0.013 ms | 20 |
+| Palindromes over {a, b} | 5 | 15 | 0.147 ms | 0.049 ms | 40 | 0.018 ms | 16 |
+| Equal numbers of a's and b's | 4 | 13 | 0.150 ms | 0.073 ms | 42 | 0.010 ms | 12 |
+
+Every string produced the verdict the sample file declares, and the two
+engines agreed on all 47 of them.
+
+**On this table, CYK wins every row** — by 1.2× on aⁿbⁿ and 7.3× on the equal
+a's and b's grammar. That is worth stating plainly rather than burying,
+because it is the comparison a student actually performs: these strings are
+two to six characters long, where CYK's table is trivially small and Earley
+pays its per-item bookkeeping on every one of them.
+
+It is also, on its own, misleading in two directions — which is what the next
+two subsections are for.
+
+### Measured: how the two scale with input length
+
+The saved test strings are far too short to show an asymptotic difference, so
+these are generated accepted strings up to the 30-character cap of §4 and §6.
+Three grammars: one unambiguous, two ambiguous.
+
+**`S → a S b | ε`** — unambiguous, 7 CNF productions:
+
+| n | Earley | steps | CYK | steps | CYK/Earley |
+|---|---|---|---|---|---|
+| 4 | 0.024 ms | 20 | 0.018 ms | 22 | 0.75× |
+| 8 | 0.037 ms | 36 | 0.061 ms | 122 | 1.64× |
+| 12 | 0.058 ms | 52 | 0.171 ms | 366 | 2.94× |
+| 16 | 0.065 ms | 68 | 0.356 ms | 818 | 5.46× |
+| 20 | 0.079 ms | 84 | 0.684 ms | 1542 | 8.62× |
+| 24 | 0.097 ms | 100 | 1.008 ms | 2602 | 10.36× |
+| 30 | 0.120 ms | 124 | 1.884 ms | 4962 | 15.76× |
+
+**`S → ( S ) | S S | ε`** — ambiguous, 9 CNF productions:
+
+| n | Earley | steps | CYK | steps | CYK/Earley |
+|---|---|---|---|---|---|
+| 4 | 0.085 ms | 49 | 0.014 ms | 22 | 0.17× |
+| 8 | 0.187 ms | 97 | 0.075 ms | 122 | 0.40× |
+| 12 | 0.320 ms | 153 | 0.226 ms | 366 | 0.71× |
+| 16 | 0.501 ms | 217 | 0.721 ms | 818 | 1.44× |
+| 20 | 1.236 ms | 289 | 1.002 ms | 1542 | 0.81× |
+| 24 | 1.705 ms | 369 | 1.581 ms | 2602 | 0.93× |
+| 30 | 3.096 ms | 504 | 3.031 ms | 4962 | 0.98× |
+
+**`S → a S b | b S a | S S | ε`** — ambiguous, 13 CNF productions:
+
+| n | Earley | steps | CYK | steps | CYK/Earley |
+|---|---|---|---|---|---|
+| 4 | 0.122 ms | 68 | 0.022 ms | 22 | 0.18× |
+| 8 | 0.342 ms | 166 | 0.119 ms | 122 | 0.35× |
+| 12 | 1.109 ms | 304 | 0.402 ms | 366 | 0.36× |
+| 16 | 1.184 ms | 482 | 0.863 ms | 818 | 0.73× |
+| 20 | 1.956 ms | 700 | 2.026 ms | 1542 | 1.04× |
+| 24 | 2.654 ms | 958 | 4.716 ms | 2602 | 1.78× |
+| 30 | 4.487 ms | 1420 | 6.417 ms | 4962 | 1.43× |
+
+### What the numbers say
+
+**1. CYK's work depends only on n — never on the grammar.** At n = 30 all three
+grammars record *exactly* 4962 steps, with CNF sizes of 7, 9 and 13
+productions and languages as different as aⁿbⁿ and balanced parentheses. The
+trace of §4 is a fixed traversal: one `combine` per (i, l, k) triple whatever
+the cells happen to hold. In closed form,
+
+> CYK steps = 2 + n + C(n+1, 3) + n(n−1)/2
+
+which reproduces every entry in the CYK step columns above to the digit —
+22, 122, 366, 818, 1542, 2602, 4962. **CYK cannot go faster on an easy
+grammar**, and the |P| factor of its O(n³·|P|) bound shows up in the cost of
+each step, not in how many it takes.
+
+**2. Earley's work tracks the grammar, exactly as §6 predicts.** On the
+unambiguous `S → a S b | ε` it is not merely sub-cubic but *linear*, and
+exactly so: 20 steps at n = 4 and 124 at n = 30 is precisely 4 steps per input
+character. This is the tightening §6 claims for LR(k)-recognisable grammars,
+obtained with no property of the grammar declared, tested or converted. On
+both ambiguous grammars the step counts have a constant second difference —
+49 → 504 and 68 → 1420 — that is, **Θ(n²)**. Note what that means: even
+*ambiguous* grammars stay a full order below Earley's cubic worst case here.
+The bound of §6 tightens on its own, by degrees, and ambiguity costs an order
+rather than the whole margin.
+
+**3. Which engine wins is decided by ambiguity, not by length.** This is the
+finding that a length-only reading of the tables would get wrong. On the
+unambiguous grammar Earley pulls away without limit — 0.75× at n = 4 becomes
+15.8× at n = 30, and the gap is still widening. On the two ambiguous grammars
+it never pulls away at all: after trailing badly at small n it reaches roughly
+par by n = 30 (0.98× and 1.43×) and stays there. Earley pays a heavier
+constant per item than CYK pays per cell, and only the grammar-driven collapse
+in item count buys that back. Where the collapse does not happen, the two
+finish level.
+
+**4. The conversion is the largest single cost at classroom sizes, and this is
+why §9 refuses to fold it into CYK.** In the sample table the conversion runs
+0.129–0.210 ms while *either* engine parses a string in 0.010–0.097 ms. For a
+single string, CYK-plus-conversion therefore loses to Earley outright, and
+badly — 0.142 ms against 0.016 ms on aⁿbⁿ, a factor of nine. Amortised, the
+break-even point is the conversion cost divided by CYK's per-string advantage,
+and it is nowhere near constant: about **2 strings** for balanced parentheses,
+about **2.4** for the equal a's and b's grammar, but about **43** for aⁿbⁿ,
+where CYK's advantage per string is only 0.003 ms. Reported separately and
+labelled *one-off per grammar*, a reader can compute this. Folded into CYK's
+per-string figure, the number would have been wrong by whatever the batch size
+happened to be.
+
+**Summary.** Both engines are O(n³) in the worst case and decide the same
+language, so nothing here is a correctness difference. Empirically: CYK is
+faster on the short strings a student types, Earley is faster on longer input
+*if* the grammar is unambiguous, and the CNF conversion — invisible in the
+asymptotics — dominates both until enough strings have been run to pay for it.

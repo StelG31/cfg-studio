@@ -13,10 +13,13 @@
  *   Three things make an Earley chart harder to animate than a CYK table, and
  *   each is answered here rather than in the view:
  *
- *   VOLUME. Earley emits far more steps than CYK — a four-character input runs
- *     to a hundred or so where CYK manages twenty. Past ANIMATED_MAX_LENGTH the
- *     replay is not worth watching, so the view falls back to a verdict and
- *     renderUnavailable() explains why.
+ *   DENSITY. Not raw step count: measured, Earley does NOT emit more steps
+ *     than CYK — a four-character input records 20-59 steps against CYK's 22,
+ *     and by twelve characters CYK records rather more (366 against 52-304).
+ *     It is that a step here is a whole dotted rule rather than a set of
+ *     variables, so the same count is more to read. Past ANIMATED_MAX_LENGTH
+ *     the replay is not worth watching, so the view falls back to a verdict
+ *     and renderUnavailable() explains why.
  *   WIDTH. An item is a whole dotted rule plus an origin, and a column is a
  *     variable-length list rather than one cell of a neat triangle. Columns are
  *     laid out as vertical lists in one horizontally scrolling strip, and the

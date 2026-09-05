@@ -30,6 +30,7 @@ import {
   ENGINE_LABELS,
   ENGINE_HINTS,
   engineAvailability,
+  firstReadyEngine,
   runOnce,
 } from '../engines.js';
 
@@ -104,6 +105,17 @@ export function init() {
 
 function renderEngineChoice() {
   const availability = engineAvailability();
+
+  // Same rule as the simulator: a selection that cannot run is moved before
+  // anything is painted, rather than shown checked-and-disabled over a dead
+  // Run button. firstReadyEngine() in engines.js explains the one bounce.
+  if (!availability[state.engine].ready) {
+    const fallback = firstReadyEngine();
+    if (fallback !== null) {
+      setEngine(fallback);
+      return;
+    }
+  }
 
   els.engineChoice.innerHTML = ENGINE_ORDER.map((engine) => {
     const { ready, reason } = availability[engine];

@@ -165,6 +165,35 @@ export function engineAvailability() {
   };
 }
 
+/**
+ * The engine to fall back on when the selected one cannot run: the first
+ * READY id in ENGINE_ORDER, or null when nothing can run at all.
+ *
+ * ENGINE_ORDER leading with Earley is the whole point. Earley needs no
+ * conversion, so whenever anything can run this answers with the choice that
+ * asks the least of the user — and with everything ready, that is Earley.
+ *
+ * It NAMES the engine rather than switching to it, so the decision stays
+ * with the views that own a radio group. The way they apply it:
+ *
+ *     if (!availability[state.engine].ready) {
+ *       const fallback = firstReadyEngine();
+ *       if (fallback !== null) { setEngine(fallback); return; }
+ *     }
+ *
+ * That is reached only when state.engine is NOT ready and the fallback IS,
+ * so the two always differ and setEngine's equality guard cannot swallow the
+ * call and leave the group unpainted. setEngine emits 'engine-changed', both
+ * views repaint, and the repaint finds a ready selection — so the bounce is
+ * exactly one deep and needs no re-entry flag.
+ *
+ * @returns {string|null} an engine id, or null when none can run.
+ */
+export function firstReadyEngine() {
+  const availability = engineAvailability();
+  return ENGINE_ORDER.find((engine) => availability[engine].ready) ?? null;
+}
+
 /* ------------------------------------------------------------------------ */
 /* Timing                                                                    */
 /* ------------------------------------------------------------------------ */

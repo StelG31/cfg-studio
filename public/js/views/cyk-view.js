@@ -46,6 +46,7 @@ import {
   ENGINE_LABELS,
   ENGINE_HINTS,
   engineAvailability,
+  firstReadyEngine,
   resolveCnfGrammar,
   resolveEarleyGrammar,
   runOnce,
@@ -160,9 +161,23 @@ export function init() {
  * Paint the engine radio group from state.engine, disabling any choice that
  * cannot run right now and saying why. Rebuilt wholesale on every call, so
  * listeners never accumulate.
+ *
+ * A selection that cannot run is not painted at all: it is moved first. See
+ * firstReadyEngine() in engines.js for why that settles in one bounce.
  */
 function renderEngineChoice() {
   const availability = engineAvailability();
+
+  // A checked-but-disabled radio explains nothing and leaves Run dead, so
+  // never leave the selection on an engine that cannot run — most often
+  // after an edit cleared the CNF conversion out from under CYK.
+  if (!availability[state.engine].ready) {
+    const fallback = firstReadyEngine();
+    if (fallback !== null) {
+      setEngine(fallback); // emits 'engine-changed' → this runs again, and paints
+      return;
+    }
+  }
 
   els.engineChoice.innerHTML = ENGINE_ORDER.map((engine) => {
     const { ready, reason } = availability[engine];

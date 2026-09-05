@@ -62,11 +62,13 @@ export const state = {
    * ENGINES in engines.js. Shared rather than owned by a view so the choice
    * follows the user between the two screens that offer it.
    *
-   * Defaults to CYK: it is what the app did before engines were selectable,
-   * and the animated table is the feature the rest of the UI is built around.
+   * Defaults to Earley: it runs on any valid grammar with no preparation,
+   * so the first string can be parsed the moment the grammar validates. CYK
+   * would need a CNF conversion nobody has performed yet, which is why it
+   * used to open both screens on a choice that could not run.
    * The literal avoids importing engines.js here, which imports this module.
    */
-  engine: 'cyk',
+  engine: 'earley',
   /**
    * Result of the last parse run, whichever engine produced it — the run
    * record built by runOnce() in engines.js ({engine, input, accepted,

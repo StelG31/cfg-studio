@@ -318,3 +318,4 @@ The repository ships with a [`render.yaml`](render.yaml) blueprint: one Node web
 ## License
 
 MIT — see `package.json`. Built as a Bachelor's Thesis; free to use for teaching and learning.
+

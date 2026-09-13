@@ -42,9 +42,10 @@ export async function migrate() {
  * Create the first admin from the environment, if it does not exist yet.
  *
  * Missing credentials are a warning rather than a fatal error: the grammar
- * algorithms, the samples and the whole UI work without an administrator.
- * Only saving needs one, and that failure reports itself clearly when it
- * happens (see models/grammarStore.js).
+ * algorithms and the samples are still served without an administrator, over
+ * the open API. The web UI is not usable, though — every screen requires a
+ * session, and with no administrator and no registration page nobody can
+ * sign in until one is created.
  */
 async function bootstrapAdmin() {
   // Normalised to lower case so ADMIN_USERNAME="Admin" and "admin" mean the
@@ -57,8 +58,8 @@ async function bootstrapAdmin() {
   if (!username || !password) {
     console.warn(
       '[migrate] ADMIN_USERNAME and ADMIN_PASSWORD are not both set — no ' +
-        'administrator was created. The app will start, but saving a grammar ' +
-        'will fail until an administrator exists. Set both and restart.'
+        'administrator was created. The app will start, but nobody can sign ' +
+        'in until an administrator exists. Set both and restart.'
     );
     return;
   }

@@ -14,7 +14,7 @@
  *   each is answered here rather than in the view:
  *
  *   DENSITY. Not raw step count: measured, Earley does NOT emit more steps
- *     than CYK — a four-character input records 20-59 steps against CYK's 22,
+ *     than CYK — a four-character input records 20-68 steps against CYK's 22,
  *     and by twelve characters CYK records rather more (366 against 52-304).
  *     It is that a step here is a whole dotted rule rather than a set of
  *     variables, so the same count is more to read. Past ANIMATED_MAX_LENGTH

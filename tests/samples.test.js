@@ -93,9 +93,10 @@ describe('every declared test string gets the verdict it claims', () => {
 });
 
 describe('the two engines agree on every sample', () => {
-  // The engines share no code path beyond core/grammar.js — Earley runs the
-  // grammar as written, CYK runs its CNF conversion — so any disagreement
-  // here is a real bug in one of them, never a property of the grammar.
+  // The engines share only the grammar model and the validator; their
+  // recognition logic is independent — Earley runs the grammar as written,
+  // CYK runs its CNF conversion — so any disagreement here is a real bug in
+  // one of them, never a property of the grammar.
   test.each(cases)('%s: %#', (_name, sample, value) => {
     const grammar = createGrammar(sample);
     const cnf = convertToCnf(grammar).result;

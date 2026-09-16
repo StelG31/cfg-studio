@@ -101,7 +101,7 @@ Then copy `.env.example` to `.env` and fill in both URLs. No schema or migration
 ```bash
 npm run dev     # development server with auto-reload  →  http://localhost:3000
 npm start       # production-style start
-npm test        # run the full Jest suite (558 tests)
+npm test        # run the full Jest suite (566 tests)
 npm run test:coverage   # tests + coverage report
 npm run bench   # time CYK against Earley on the six sample grammars
 ```
@@ -258,7 +258,7 @@ Full documentation — *theory, pseudo-code, complexity and implementation notes
 npm test
 ```
 
-Ten suites, **558 tests**, covering the grammar model and its saved test strings, the validator (asserted by stable error codes), every CNF stage plus the full pipeline, CYK, the Earley parser, parse trees, the shipped sample grammars, authentication, authorization and the HTTP API (supertest against a throw-away PostgreSQL schema). Five test strategies deserve mention:
+Ten suites, **566 tests**, covering the grammar model and its saved test strings, the validator (asserted by stable error codes), every CNF stage plus the full pipeline, CYK, the Earley parser, parse trees, the shipped sample grammars, authentication, authorization and the HTTP API (supertest against a throw-away PostgreSQL schema). Five test strategies deserve mention:
 
 - **Language preservation:** a brute-force derivation enumerator (`tests/helpers.js`) proves L(G) = L(CNF(G)) for all strings up to a length bound on several grammars.
 - **Exhaustive agreement:** CYK's verdict is compared against the enumerated language for *every* string over {a, b} up to length 5.

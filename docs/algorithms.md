@@ -533,7 +533,7 @@ Three properties of the method matter when reading the tables:
   count was identical to the digit. **The step counts are the evidence; the
   timings are the illustration.**
 
-Figures below are from one run on Node v22.13.0, win32 x64, AMD Ryzen 7 3800X.
+Figures below were measured on Node v22.13.0, win32 x64, AMD Ryzen 7 3800X.
 Absolute values are machine-specific. Step counts and ratios are not.
 
 ### Measured: the six sample grammars
@@ -543,15 +543,15 @@ application actually ships — with the mean per string reported.
 
 | Grammar | P | CNF P | Conversion | Earley | steps | CYK | steps |
 |---|---|---|---|---|---|---|---|
-| Balanced Parentheses | 3 | 9 | 0.143 ms | 0.097 ms | 36 | 0.022 ms | 18 |
-| aⁿbⁿ | 2 | 7 | 0.129 ms | 0.016 ms | 16 | 0.013 ms | 18 |
-| Arithmetic Expressions | 6 | 20 | 0.210 ms | 0.037 ms | 26 | 0.016 ms | 22 |
-| Simple Expression Grammar | 4 | 15 | 0.162 ms | 0.029 ms | 22 | 0.013 ms | 20 |
-| Palindromes over {a, b} | 5 | 15 | 0.147 ms | 0.049 ms | 40 | 0.018 ms | 16 |
-| Equal numbers of a's and b's | 4 | 13 | 0.150 ms | 0.073 ms | 42 | 0.010 ms | 12 |
+| Balanced Parentheses | 3 | 9 | 0.138 ms | 0.083 ms | 33 | 0.021 ms | 16 |
+| aⁿbⁿ | 2 | 7 | 0.124 ms | 0.014 ms | 14 | 0.012 ms | 16 |
+| Arithmetic Expressions | 6 | 20 | 0.211 ms | 0.035 ms | 26 | 0.016 ms | 22 |
+| Simple Expression Grammar | 4 | 15 | 0.157 ms | 0.028 ms | 22 | 0.013 ms | 20 |
+| Palindromes over {a, b} | 5 | 15 | 0.142 ms | 0.042 ms | 36 | 0.015 ms | 15 |
+| Equal numbers of a's and b's | 4 | 13 | 0.137 ms | 0.066 ms | 39 | 0.009 ms | 11 |
 
 Every string produced the verdict the sample file declares, and the two
-engines agreed on all 47 of them.
+engines agreed on all 51 of them.
 
 **On this table, CYK wins every row** — by 1.2× on aⁿbⁿ and 7.3× on the equal
 a's and b's grammar. That is worth stating plainly rather than burying,

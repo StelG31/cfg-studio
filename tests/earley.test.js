@@ -273,8 +273,8 @@ describe('agreement with brute-force enumeration', () => {
 
 describe('agreement with CYK on the CNF conversion', () => {
   // Earley runs on the ORIGINAL grammar, CYK on its CNF conversion. The two
-  // share no code path beyond core/grammar.js, so any disagreement is a real
-  // bug in one of them.
+  // share only the grammar model and the validator, not their recognition
+  // logic, so any disagreement is a real bug in one of them.
   const crossCases = [
     ['a^n b^n', anbn(), ['a', 'b'], 5],
     ['palindromes', palindromes(), ['a', 'b'], 5],

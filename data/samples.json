@@ -12,7 +12,7 @@
       { "left": "S", "right": [] }
     ],
     "testStrings": {
-      "accept": ["()", "(())", "()()", "(()())"],
+      "accept": ["", "()", "(())", "()()", "(()())"],
       "reject": ["(", "())", ")(", "(()"]
     }
   },
@@ -28,7 +28,7 @@
       { "left": "S", "right": [] }
     ],
     "testStrings": {
-      "accept": ["ab", "aabb", "aaabbb"],
+      "accept": ["", "ab", "aabb", "aaabbb"],
       "reject": ["a", "ba", "abab", "aab"]
     }
   },
@@ -85,7 +85,7 @@
       { "left": "S", "right": [] }
     ],
     "testStrings": {
-      "accept": ["a", "aba", "abba", "babab"],
+      "accept": ["", "a", "aba", "abba", "babab"],
       "reject": ["ab", "aab", "abab"]
     }
   },
@@ -103,7 +103,7 @@
       { "left": "S", "right": [] }
     ],
     "testStrings": {
-      "accept": ["ab", "ba", "abba", "baab", "aabb"],
+      "accept": ["", "ab", "ba", "abba", "baab", "aabb"],
       "reject": ["a", "b", "aab", "abb"]
     }
   }

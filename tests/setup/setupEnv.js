@@ -10,7 +10,7 @@
  *   nothing and it makes the guarantee explicit rather than dependent on an
  *   implementation detail of Jest's sandboxing.
  *
- *   Deliberately imports nothing from models/: five of the six test files
+ *   Deliberately imports nothing from models/: seven of the ten test files
  *   exercise pure core algorithms and must not acquire a database
  *   dependency just by running.
  */

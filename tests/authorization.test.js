@@ -73,8 +73,8 @@ const GRAMMAR_TARGET = {
 };
 
 beforeAll(async () => {
-  // Dynamic, so DATABASE_URL is already pointing at the test schema when
-  // models/db.js is evaluated. See tests/api.test.js for the full reasoning.
+  // Dynamic, so nothing from the data layer loads before DATABASE_URL points
+  // at the test schema. See tests/api.test.js for the full reasoning.
   ({ default: app } = await import('../app.js'));
   db = await import('../models/db.js');
 });

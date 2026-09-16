@@ -11,10 +11,11 @@
  *   actually binds a port.
  *
  *   Import order is load-bearing: 'dotenv/config' must stay FIRST. ES module
- *   imports are evaluated in source order, and models/db.js reads
- *   DATABASE_URL while app.js's module graph is being evaluated on the line
- *   below. Swapping these two would break startup on every machine that
- *   keeps its configuration in .env.
+ *   imports are evaluated in source order, and app.js reads NODE_ENV while
+ *   it is being evaluated on the line below (trust proxy, static caching).
+ *   Swapping these two would make a machine that sets NODE_ENV only in .env
+ *   start silently with development settings. DATABASE_URL is not affected:
+ *   models/db.js creates its pool lazily, on the first query.
  */
 
 import 'dotenv/config';

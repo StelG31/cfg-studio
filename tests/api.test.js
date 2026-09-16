@@ -24,10 +24,11 @@ let db;
 let agent;
 
 beforeAll(async () => {
-  // DATABASE_URL already points at the test schema. The import below must
-  // stay DYNAMIC: models/db.js reads that variable while it is being
-  // evaluated, not when it is called, so a static import at the top of this
-  // file would run before the environment was ready.
+  // DATABASE_URL already points at the test schema: setupEnv.js runs before
+  // this file. The import is dynamic to make explicit that nothing from the
+  // data layer loads before that environment exists; models/db.js would not
+  // read the variable at import time anyway, since it creates its pool on
+  // the first query.
   ({ default: app } = await import('../app.js'));
   // The same module instance the app uses — Jest keeps one module registry
   // per test file.

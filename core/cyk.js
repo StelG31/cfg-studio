@@ -206,7 +206,7 @@ export function runCyk(grammar, input) {
       explanation:
         `w[${i + 1}] = "${terminal}". ` +
         (rules.length > 0
-          ? `Rules producing "${terminal}": ${rules.map(productionToString).join(', ')} — ` +
+          ? `Rules producing "${terminal}": ${rules.map((rule) => productionToString(rule)).join(', ')} — ` +
             `so cell (${i + 1}, 1) = { ${variables.join(', ')} }.`
           : `No rule produces "${terminal}", so cell (${i + 1}, 1) stays empty.`),
     });

@@ -437,6 +437,8 @@ describe('chart and trace anatomy', () => {
       expect(typeof step.explanation).toBe('string');
       expect(step.explanation.length).toBeGreaterThan(0);
     }
+    // The seeded rules keep their arrow (see the note in cnf.test.js).
+    expect(steps[0].explanation).toMatch(/seeded with \S+ → /);
   });
 
   test('one column-done step is emitted per column', () => {

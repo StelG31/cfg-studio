@@ -301,7 +301,7 @@ export function applyBin(grammar) {
         before,
         cascade[0],
         `${show(before)} has ${symbols.length} symbols — it is split into a cascade of ` +
-          `${cascade.length} binary rules: ${cascade.map(show).join(' ,  ')}.`
+          `${cascade.length} binary rules: ${cascade.map((rule) => show(rule)).join(', ')}.`
       )
     );
     for (const rule of cascade.slice(1)) {

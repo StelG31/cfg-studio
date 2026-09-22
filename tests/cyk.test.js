@@ -148,6 +148,10 @@ describe('table and trace anatomy (aabb over CNF(a^n b^n))', () => {
       expect(typeof step.explanation).toBe('string');
       expect(step.explanation.length).toBeGreaterThan(0);
     }
+    // The listed rules keep their arrow (see the note in cnf.test.js).
+    for (const step of result.steps.filter((s) => s.type === 'init-cell')) {
+      expect(step.explanation).toMatch(/Rules producing "[^"]+": \S+ → /);
+    }
   });
 });
 

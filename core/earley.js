@@ -404,7 +404,7 @@ export function runEarley(grammar, input) {
       `Earley builds ${n + 1} columns for w = ${shownInput} (n = ${n}). An item A → α • β (j) ` +
       'in column c means: a production of A began at column j, and α has matched the input ' +
       `between columns j and c. Column 0 is seeded with ` +
-      `${(rulesFor.get(start) ?? []).map(productionToString).join(', ') || '∅'}, dotted at the ` +
+      `${(rulesFor.get(start) ?? []).map((rule) => productionToString(rule)).join(', ') || '∅'}, dotted at the ` +
       'front. No Chomsky Normal Form conversion is needed.',
   });
 

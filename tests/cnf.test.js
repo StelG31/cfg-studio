@@ -299,6 +299,12 @@ describe('convertToCnf — structure', () => {
       expect(step.grammar.productions).toBeDefined();
       expect(step.explanation.length).toBeGreaterThan(0);
     }
+    // Rules listed inside a reason keep their arrow. map(show) once passed the
+    // array index as productionToString's `arrow`, printing "S 0 T_a X1".
+    const bin = conversion.steps.find((s) => s.stage === 'BIN');
+    for (const change of bin.changes.filter((c) => c.type === 'replace')) {
+      expect(change.reason).toMatch(/binary rules: \S+ → /);
+    }
   });
 
   test('an already-CNF grammar is reported as such, unchanged', () => {

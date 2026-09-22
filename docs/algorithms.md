@@ -341,11 +341,13 @@ EPSILON-REPAIR(c, I = A → α•Bβ (j), B):
 
 **Why the two halves are exhaustive.** Take any waiting item W (dot before B) and any completion C of B with origin c, both in column c. If C entered the column after W, then C's own scan of the column finds W. If C entered before W, the repair fires when the main loop reaches W. One of the two always holds, so the pair is never missed — and since the upsert also discards a derivation it has already recorded, it is never counted twice either. A completion whose origin j is an *earlier* column needs no repair at all: column j stopped growing when the parser moved past it.
 
+**How this differs from the published fixes.** It is not Aycock & Horspool's fix, which advances the dot over any *precomputed* nullable variable: the repair here acts only on ε-completions that actually happened in the column, so every advanced dot records the completed item that caused it — which is what the tree builder follows. Unlike Earley's own fix, the check runs when the predictor processes an item, not whenever an item is added.
+
 One point deserves stating plainly, because it is the trap. This is not a bug that surfaces on the obvious test cases: every one of the sample grammars, the nullable ones included, parses correctly *without* the repair. The four-rule grammar above was constructed specifically to expose the ordering, and it is what the regression test pins.
 
 ### Complexity
 
-Each column holds O(|P| · n) distinct items — a production, a dot and an origin — and COMPLETE may pair each of them against the items of one earlier column, giving **O(n³)** in the worst case, the standard bound for general context-free recognition. The bound tightens by itself on well-behaved grammars: **O(n²)** for unambiguous grammars and **O(n)** for the LR(k)-recognisable ones, simply because fewer items survive in each column. No property of the grammar has to be declared or tested to obtain this.
+Each column holds O(|P| · n) distinct items — a production, a dot and an origin — and COMPLETE may pair each of them against the items of one earlier column, giving **O(n³)** in the worst case, the standard bound for general context-free recognition. The bound tightens by itself on well-behaved grammars: **O(n²)** for unambiguous, reduced grammars and **O(n)** for bounded-state grammars — those whose columns never exceed a fixed size, which include almost all LR(k) grammars (Earley 1970, p. 99; all of them only with k-symbol lookahead, which CFG Studio does not implement) — simply because fewer items survive in each column. No property of the grammar has to be declared or tested to obtain this.
 
 CFG Studio caps the input at 30 characters, keeping the recorded trace bounded and the chart readable.
 
@@ -622,7 +624,7 @@ each step, not in how many it takes.
 **2. Earley's work tracks the grammar, exactly as §6 predicts.** On the
 unambiguous `S → a S b | ε` it is not merely sub-cubic but *linear*, and
 exactly so: 20 steps at n = 4 and 124 at n = 30 is precisely 4 steps per input
-character. This is the tightening §6 claims for LR(k)-recognisable grammars,
+character. This is the tightening §6 claims for bounded-state grammars,
 obtained with no property of the grammar declared, tested or converted. On
 both ambiguous grammars the step counts have a constant second difference —
 49 → 504 and 68 → 1420 — that is, **Θ(n²)**. Note what that means: even

@@ -247,7 +247,7 @@ Full documentation — *theory, pseudo-code, complexity and implementation notes
 3. **CNF conversion** — START → TERM → BIN → DEL (nullable-set fixpoint + subset expansion) → UNIT (unit-pair closure) → CLEANUP, polynomial overall *because* BIN runs before DEL.
 4. **CYK** — the O(n³·|P|) dynamic program over CNF; every table entry keeps all its derivations (backpointers), and a granular step trace drives the UI animation.
 5. **Parse-tree reconstruction** — an O(n) top-down walk along the backpointers; the leftmost derivation is its pre-order traversal.
-6. **Earley recognition** — the O(n³) chart parser that needs no normal form at all: predict / scan / complete over n+1 columns, with the Aycock–Horspool repair for nullable symbols and all derivations kept as backpointers.
+6. **Earley recognition** — the O(n³) chart parser that needs no normal form at all: predict / scan / complete over n+1 columns, with a repair for the ε-ordering problem described by Aycock & Horspool and all derivations kept as backpointers.
 7. **Earley parse-tree reconstruction** — the same walk over the chart's backpointers, producing an n-ary tree in the **original** grammar; the node shape is deliberately identical to the CYK one, so the renderer and every tree helper accept both unchanged.
 8. **Tree layout** — simplified Reingold–Tilford (leaf slots + centre-over-children), rendered as hand-rolled SVG with viewBox-based pan/zoom.
 9. **CYK versus Earley** — the theoretical comparison (CNF requirement, complexity, tree vocabulary and arity) together with its *empirical* confirmation: both engines measured on the six sample grammars and across input lengths up to the 30-character cap, produced by `npm run bench`.

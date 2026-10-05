@@ -249,7 +249,7 @@ Full documentation — *theory, pseudo-code, complexity and implementation notes
 5. **Parse-tree reconstruction** — an O(n) top-down walk along the backpointers; the leftmost derivation is its pre-order traversal.
 6. **Earley recognition** — the O(n³) chart parser that needs no normal form at all: predict / scan / complete over n+1 columns, with a repair for the ε-ordering problem described by Aycock & Horspool and all derivations kept as backpointers.
 7. **Earley parse-tree reconstruction** — the same walk over the chart's backpointers, producing an n-ary tree in the **original** grammar; the node shape is deliberately identical to the CYK one, so the renderer and every tree helper accept both unchanged.
-8. **Tree layout** — simplified Reingold–Tilford (leaf slots + centre-over-children), rendered as hand-rolled SVG with viewBox-based pan/zoom.
+8. **Tree layout** — leaf-based layout (leaf slots + centre-over-children; full Reingold–Tilford is not needed because the leaves are ordered), rendered as hand-rolled SVG with viewBox-based pan/zoom.
 9. **CYK versus Earley** — the theoretical comparison (CNF requirement, complexity, tree vocabulary and arity) together with its *empirical* confirmation: both engines measured on the six sample grammars and across input lengths up to the 30-character cap, produced by `npm run bench`.
 
 ## Testing

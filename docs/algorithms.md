@@ -417,12 +417,12 @@ A single pass over the backpointers, one node per symbol of the productions appl
 
 ### Theory
 
-Drawing a tidy tree means solving one constraint problem: children centred under parents, no overlaps, minimal width. For **binary trees with all leaves at known positions** — exactly what CNF derivation trees are — the classic simplification of the Reingold–Tilford method suffices:
+Drawing a tidy tree means solving one constraint problem: children centred under parents, no overlaps, minimal width. The general answer is the Reingold–Tilford algorithm (Reingold & Tilford, *Tidier Drawings of Trees*, IEEE TSE 1981), which lays out each subtree separately and pushes neighbouring subtrees together as far as their contours allow. A parse tree does not need it: its leaves are ordered — they spell the input word — so a simple leaf-based layout suffices:
 
 1. **x-coordinates:** a post-order pass assigns each *leaf* the next free horizontal slot; every internal node sits at the midpoint of its children's x-positions.
 2. **y-coordinates:** the node's depth.
 
-This is O(n), produces no crossings, and keeps uniform spacing — visually indistinguishable from full Reingold–Tilford on these trees.
+This is O(n), produces no crossings, keeps uniform spacing, and reads the input word left to right along the bottom of the drawing.
 
 ### Implementation details (`public/js/tree.js`)
 
